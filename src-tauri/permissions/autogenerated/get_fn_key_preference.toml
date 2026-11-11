@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-fn-key-preference"
+description = "Enables the get_fn_key_preference command without any pre-configured scope."
+commands.allow = ["get_fn_key_preference"]
+
+[[permission]]
+identifier = "deny-get-fn-key-preference"
+description = "Denies the get_fn_key_preference command without any pre-configured scope."
+commands.deny = ["get_fn_key_preference"]

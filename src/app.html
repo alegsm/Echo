@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="%sveltekit.assets%/favicon.png" />
+    <script>
+      document.documentElement.dataset.echoSurface =
+        new URLSearchParams(window.location.search).get('surface') === 'overlay' ? 'overlay' : 'dashboard';
+      document.documentElement.dataset.echoTauri = (window).__TAURI_INTERNALS__ ? 'yes' : 'no';
+    </script>
+    <script>
+      (function () {
+        var surface = new URLSearchParams(window.location.search).get('surface');
+        if (surface !== 'overlay') {
+          document.documentElement.setAttribute('data-theme', 'chalk');
+          document.documentElement.setAttribute('data-accent', 'chalk');
+        }
+      })();
+    </script>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        width: 100%;
+      }
+
+      #app-root {
+        min-height: 100%;
+      }
+
+      html[data-echo-surface='overlay'],
+      html[data-echo-surface='overlay'] body,
+      html[data-echo-surface='overlay'] #app-root {
+        background: transparent;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+        width: 100%;
+      }
+
+      html[data-echo-surface='overlay'][data-echo-tauri='yes'],
+      html[data-echo-surface='overlay'][data-echo-tauri='yes'] body,
+      html[data-echo-surface='overlay'][data-echo-tauri='yes'] #app-root {
+        border-radius: var(--echo-window-radius, 999px);
+        clip-path: inset(0 round var(--echo-window-radius, 999px));
+      }
+
+      html:not([data-echo-surface='overlay']),
+      html[data-echo-surface='dashboard'] body {
+        background: #000;
+        color-scheme: dark;
+      }
+    </style>
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div id="app-root">%sveltekit.body%</div>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-delete-persisted-transcript"
+description = "Enables the delete_persisted_transcript command without any pre-configured scope."
+commands.allow = ["delete_persisted_transcript"]
+
+[[permission]]
+identifier = "deny-delete-persisted-transcript"
+description = "Denies the delete_persisted_transcript command without any pre-configured scope."
+commands.deny = ["delete_persisted_transcript"]

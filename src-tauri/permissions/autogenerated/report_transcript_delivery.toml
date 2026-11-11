@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-report-transcript-delivery"
+description = "Enables the report_transcript_delivery command without any pre-configured scope."
+commands.allow = ["report_transcript_delivery"]
+
+[[permission]]
+identifier = "deny-report-transcript-delivery"
+description = "Denies the report_transcript_delivery command without any pre-configured scope."
+commands.deny = ["report_transcript_delivery"]

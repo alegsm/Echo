@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-provider-api-key-presence"
+description = "Enables the provider_api_key_presence command without any pre-configured scope."
+commands.allow = ["provider_api_key_presence"]
+
+[[permission]]
+identifier = "deny-provider-api-key-presence"
+description = "Denies the provider_api_key_presence command without any pre-configured scope."
+commands.deny = ["provider_api_key_presence"]

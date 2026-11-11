@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-preview-history-retention"
+description = "Enables the preview_history_retention command without any pre-configured scope."
+commands.allow = ["preview_history_retention"]
+
+[[permission]]
+identifier = "deny-preview-history-retention"
+description = "Denies the preview_history_retention command without any pre-configured scope."
+commands.deny = ["preview_history_retention"]

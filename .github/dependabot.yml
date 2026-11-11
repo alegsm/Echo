@@ -1,0 +1,35 @@
+version: 2
+updates:
+  # The Bun ecosystem updates npm packages and bun.lock together.
+  # Monthly, one grouped pull request per ecosystem, to keep update traffic low.
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      bun:
+        patterns: ["*"]
+    ignore:
+      # SvelteKit 3.1 and svelte-check 4.7 accept TypeScript 6 only.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      cargo:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]

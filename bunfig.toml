@@ -1,0 +1,6 @@
+[install]
+minimumReleaseAge = 259200
+minimumReleaseAgeExcludes = []
+
+[test]
+preload = ["./tests/helpers/host-platform.ts"]

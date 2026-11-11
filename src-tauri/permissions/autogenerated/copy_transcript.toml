@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-copy-transcript"
+description = "Enables the copy_transcript command without any pre-configured scope."
+commands.allow = ["copy_transcript"]
+
+[[permission]]
+identifier = "deny-copy-transcript"
+description = "Denies the copy_transcript command without any pre-configured scope."
+commands.deny = ["copy_transcript"]

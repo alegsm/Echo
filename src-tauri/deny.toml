@@ -1,0 +1,41 @@
+[graph]
+# Echo ships on macOS and Windows; Linux-only build dependencies are out of scope.
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+
+[advisories]
+# Unmaintained unic-* crates reach Echo only through tauri-utils -> urlpattern (upstream Tauri),
+# which Tauri uses at runtime for capability URL matching. They are flagged unmaintained, with no
+# known vulnerability; revisit when Tauri drops urlpattern 0.3.
+ignore = [
+    { id = "RUSTSEC-2025-0075", reason = "unic-char-range via tauri-utils/urlpattern (upstream Tauri), unmaintained only" },
+    { id = "RUSTSEC-2025-0080", reason = "unic-common via tauri-utils/urlpattern (upstream Tauri), unmaintained only" },
+    { id = "RUSTSEC-2025-0081", reason = "unic-char-property via tauri-utils/urlpattern (upstream Tauri), unmaintained only" },
+    { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version via tauri-utils/urlpattern (upstream Tauri), unmaintained only" },
+    { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident via tauri-utils/urlpattern (upstream Tauri), unmaintained only" },
+]
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

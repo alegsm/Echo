@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-change-fn-key-preference"
+description = "Enables the change_fn_key_preference command without any pre-configured scope."
+commands.allow = ["change_fn_key_preference"]
+
+[[permission]]
+identifier = "deny-change-fn-key-preference"
+description = "Denies the change_fn_key_preference command without any pre-configured scope."
+commands.deny = ["change_fn_key_preference"]

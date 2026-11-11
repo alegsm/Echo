@@ -1,0 +1,16 @@
+.DS_Store
+node_modules/
+dist/
+build/
+.svelte-kit/
+src-tauri/target/
+.env
+.env.*
+*.log
+
+# Dev-time verification screenshots (live in /tmp or docs/architecture/)
+/dashboard-*.png
+/mobile-*.png
+/tablet-*.png
+/slice*.png
+/slice-*.png

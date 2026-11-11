@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-persisted-history"
+description = "Enables the list_persisted_history command without any pre-configured scope."
+commands.allow = ["list_persisted_history"]
+
+[[permission]]
+identifier = "deny-list-persisted-history"
+description = "Denies the list_persisted_history command without any pre-configured scope."
+commands.deny = ["list_persisted_history"]

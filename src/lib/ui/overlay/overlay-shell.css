@@ -1,0 +1,781 @@
+@property --echo-fg {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(208, 204, 200, 0.82);
+}
+
+@property --echo-dim {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(208, 204, 200, 0.18);
+}
+
+@property --echo-glow {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(208, 204, 200, 0.45);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: transparent !important;
+  color: #c8c2bc;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  transition: border-radius 160ms ease, clip-path 160ms ease;
+  width: 100%;
+}
+
+/* Ready previews snap root clipping to avoid cropping the pill; compact/details keep their radius morph. */
+html:has(main.has-preview),
+html:has(main.has-preview) body {
+  transition: none;
+}
+
+html[data-echo-tauri='yes'],
+html[data-echo-tauri='yes'] body {
+  border-radius: var(--echo-window-radius, 999px);
+  clip-path: inset(0 round var(--echo-window-radius, 999px));
+}
+
+html[data-echo-tauri='no'] body {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+}
+
+html[data-echo-surface='overlay'] #app-root {
+  background: transparent !important;
+  height: 100%;
+  overflow: hidden;
+  width: 100%;
+}
+
+html[data-echo-surface='overlay'][data-echo-tauri='yes'] #app-root {
+  border-radius: var(--echo-window-radius, 999px);
+  clip-path: inset(0 round var(--echo-window-radius, 999px));
+}
+
+main {
+  --glass-tint-cool: radial-gradient(120% 150% at 0% 0%, rgba(170, 195, 222, 0.09), transparent 62%);
+  --glass-tint-warm: radial-gradient(120% 150% at 100% 100%, rgba(238, 229, 210, 0.07), transparent 58%);
+  --glass-white: linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.05));
+  --glass-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --echo-fg: rgba(208, 204, 200, 0.82);
+  --echo-dim: rgba(208, 204, 200, 0.18);
+  --echo-glow: rgba(208, 204, 200, 0.45);
+  align-items: end;
+  background: transparent;
+  display: block;
+  width: 100%;
+  height: 100%;
+  clip-path: inset(0 round var(--echo-window-radius, 999px));
+  overflow: hidden;
+  padding: 0;
+  transition: --echo-fg 160ms ease, --echo-dim 160ms ease, --echo-glow 160ms ease;
+}
+
+main.expanded {
+  width: 380px;
+  height: 210px;
+}
+
+main.has-preview {
+  clip-path: none;
+  overflow: visible;
+}
+
+main[data-mode='orb'] {
+  padding: 0;
+}
+
+main[data-mode='orb'].expanded {
+  padding: 0;
+}
+
+main[data-tone='active'],
+main[data-tone='handsFree'] {
+  --echo-fg: rgba(224, 221, 216, 0.95);
+  --echo-dim: rgba(224, 221, 216, 0.16);
+  --echo-glow: rgba(224, 221, 216, 0.65);
+}
+
+main[data-tone='warning'] {
+  --glass-glow: rgba(255, 91, 100, 0.65);
+  --outline-core: #ff5b64;
+}
+
+main[data-tone='active'] {
+  --glass-glow: rgba(189, 238, 255, 0.65);
+  --outline-core: #bdeeff;
+}
+
+main[data-tone='handsFree'] {
+  --glass-glow: rgba(255, 209, 138, 0.65);
+  --outline-core: #ffd18a;
+}
+
+main[data-tone='success'] {
+  --glass-glow: rgba(71, 240, 138, 0.65);
+  --outline-core: #47f08a;
+  --echo-fg: rgba(170, 218, 188, 0.95);
+  --echo-dim: rgba(170, 218, 188, 0.15);
+  --echo-glow: rgba(170, 218, 188, 0.55);
+}
+
+main[data-tone='error'] {
+  --glass-glow: rgba(255, 90, 45, 0.65);
+  --outline-core: #ff5a2d;
+  --echo-fg: rgba(255, 119, 119, 0.96);
+  --echo-dim: rgba(255, 119, 119, 0.14);
+  --echo-glow: rgba(255, 119, 119, 0.58);
+}
+
+main[data-tone='loading'] {
+  --glass-glow: rgba(201, 184, 255, 0.65);
+  --outline-core: #c9b8ff;
+  --echo-fg:   rgba(184, 168, 255, 0.95);
+  --echo-dim:  rgba(184, 168, 255, 0.16);
+  --echo-glow: rgba(184, 168, 255, 0.58);
+}
+
+main[data-tone='idle'][data-morph-phase='resting'] .orb-shell {
+  --glass-fade-ms: 120ms;
+  width: 33px;
+  height: 33px;
+  top: 23.5px;
+}
+
+/* Halo scaling driven by data-tone — halo grows outward from the core center. */
+main[data-tone='idle']    .orb-halo { width: 25px; height: 25px; }
+main[data-tone='active']  .orb-halo,
+main[data-tone='handsFree'] .orb-halo { width: 68px; height: 68px; }
+main[data-tone='warning'] .orb-halo { width: 68px; height: 68px; }
+main[data-tone='loading'] .orb-halo { width: 68px; height: 68px; }
+main[data-tone='success'] .orb-halo { width: 68px; height: 68px; }
+main[data-tone='error']   .orb-halo { width: 68px; height: 68px; }
+
+.overlay {
+  position: relative;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  display: flex;
+  gap: 5px;
+  height: 100%;
+  min-height: 20px;
+  padding: 2px 5px;
+  transition:
+    border-radius 160ms ease,
+    background 160ms ease;
+  width: 100%;
+}
+
+main[data-mode='orb'] .overlay {
+  aspect-ratio: 1;
+  background: transparent;
+  border: none;
+  display: grid;
+  height: 100%;
+  padding: 0;
+  place-items: center;
+  width: 100%;
+}
+
+/* The popup uses the pill's tint pools over a denser base. */
+.expanded .overlay,
+main[data-mode='orb'].expanded .overlay {
+  align-items: start;
+  aspect-ratio: auto;
+  background: var(--glass-tint-cool), var(--glass-tint-warm), var(--glass-white), rgba(10, 13, 19, 0.95);
+  border: 0;
+  border-radius: 28px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+  display: grid;
+  gap: 8px;
+  grid-template-rows: minmax(0, 1fr) 16px;
+  height: 100%;
+  isolation: isolate;
+  justify-items: stretch;
+  overflow: hidden;
+  padding: 14px 16px 10px;
+  place-items: stretch;
+  position: relative;
+  width: 100%;
+}
+
+/* A broad top light replaces the popup's border. */
+.expanded .overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.03) 22%, transparent 48%);
+  opacity: 0.7;
+  mix-blend-mode: screen;
+  z-index: 0;
+}
+
+/* Grain softens the popup surface. */
+.expanded .overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: var(--glass-grain);
+  opacity: 0.018;
+  mix-blend-mode: overlay;
+  z-index: 0;
+}
+
+.matrix-shell,
+.collapse-button,
+.detail-actions button {
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.matrix-shell {
+  align-items: center;
+  background: transparent;
+  border-radius: 999px;
+  display: flex;
+  gap: 5px;
+  height: 16px;
+  justify-content: center;
+  min-width: 60px;
+  padding: 0 4px;
+}
+
+main[data-mode='orb'] .matrix-shell {
+  aspect-ratio: 1;
+  display: grid;
+  height: 80px;
+  place-items: center;
+  min-width: unset;
+  padding: 0;
+  position: relative;
+  width: 80px;
+  justify-self: center;
+  align-self: end;
+}
+
+main[data-mode='orb'].expanded .matrix-shell {
+  height: 36px;
+  justify-self: start;
+  width: 36px;
+}
+
+/* Details suppress the visual shell while retaining its lifecycle. */
+main.expanded .orb-shell {
+  display: none;
+}
+
+/* Hide matrix-shell when expanded; detail and collapse-button hidden when compact. */
+main.expanded .matrix-shell {
+  display: none;
+}
+
+/* Anchor to the native orb cell so resizing moves the cell without animating its coordinates. */
+.morph-anchor {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 80px;
+  height: 80px;
+  translate: -50% 0;
+  pointer-events: none;
+}
+
+/* Keep the material mounted so entering idle can fade the shell. */
+.orb-shell {
+  align-items: center;
+  background: var(--glass-tint-cool), var(--glass-tint-warm), var(--glass-white);
+  background-color: rgba(10, 13, 19, 0.81);
+  border: 0;
+  border-radius: 999px;
+  box-shadow: none;
+  display: grid;
+  height: 21px;
+  justify-content: center;
+  place-items: stretch;
+  opacity: 0;
+  transition: color 160ms ease, background-color 320ms ease-out, width 320ms ease-out, height 320ms ease-out, top 320ms ease-out, border-radius 320ms ease-out, opacity var(--glass-fade-ms, 160ms) ease var(--glass-fade-delay, 0ms), box-shadow 200ms ease;
+  position: absolute;
+  left: 50%;
+  top: 29.5px;
+  translate: -50% 0;
+  overflow: visible;
+  pointer-events: none;
+  width: 21px;
+  z-index: 1;
+}
+
+/* The sphere hugs the particles without adding a rim. */
+main[data-tone]:not([data-tone='idle'])[data-morph-phase='resting'] .orb-shell {
+  top: 10px;
+  width: 60px;
+  height: 60px;
+}
+
+main[data-tone]:not([data-tone='idle']) .orb-shell,
+main[data-morph-phase]:not([data-morph-phase='resting']) .orb-shell {
+  opacity: 1;
+}
+
+/* The compact 80px window clips the shadow, so show it only with the preview. */
+main.has-preview[data-tone]:not([data-tone='idle']) .orb-shell {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+main[data-tone]:not([data-tone='idle']) .orb-halo .echo-threaded-ring {
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.9)) drop-shadow(0 0 7px var(--glass-glow));
+  transition: filter 160ms ease;
+}
+
+/* Halo wrapper — positioned absolutely, centered on the grid cell, scales by data-tone.
+   z-index: 2 sits the threaded ring on top of the dark disc. */
+.orb-halo {
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  transition:
+    width 180ms ease,
+    height 180ms ease;
+  z-index: 2;
+}
+
+/* Let the glow linger after the halo shrinks so a stop reads as settling. */
+.overlay .orb-halo .echo-threaded-ring {
+  filter: none;
+  transition: filter 1200ms ease 240ms;
+  display: block;
+  height: 100%;
+  overflow: visible;
+  transform: none;
+  width: 100%;
+}
+
+/* Both destinations use one element, so interrupted transitions keep their computed geometry. */
+main[data-morph-phase='outward'] .orb-shell,
+main[data-morph-phase='landed'] .orb-shell {
+  width: 332px;
+  height: 48px;
+  top: 16px;
+  border-radius: 24px;
+}
+
+main[data-morph-phase='landed'] .orb-shell {
+  background-color: rgba(10, 13, 19, 0.91);
+}
+
+main[data-morph-phase='resting'] .orb-shell {
+  transition: color 160ms ease, background-color 320ms ease-out, width 180ms ease, height 180ms ease, top 180ms ease, opacity var(--glass-fade-ms, 160ms) ease var(--glass-fade-delay, 0ms), box-shadow 200ms ease;
+}
+
+/* Return to a sphere before restoring the tone's compact appearance. */
+main[data-morph-phase='returning'] .orb-shell {
+  top: 10px;
+  width: 60px;
+  height: 60px;
+  transition: color 160ms ease, background-color 320ms ease-out, width 320ms ease-out, height 320ms ease-in-out, top 320ms ease-in-out, border-radius 320ms ease-out, opacity var(--glass-fade-ms, 160ms) ease var(--glass-fade-delay, 0ms), box-shadow 200ms ease;
+}
+
+/* Fade during the last 120ms of return, before resting shrinks the bare idle halo. */
+main[data-tone='idle'][data-morph-phase='returning'] .orb-shell {
+  --glass-fade-ms: 120ms;
+  --glass-fade-delay: 200ms;
+  opacity: 0;
+}
+
+main[data-morph-phase='resting'],
+main[data-morph-phase='returning'] {
+  --halo-opacity: 1;
+  --outline-opacity: 0;
+}
+
+main[data-morph-phase='outward'],
+main[data-morph-phase='landed'] {
+  --halo-opacity: 0;
+  --outline-opacity: 1;
+}
+
+main[data-morph-phase='outward'] .orb-halo,
+main[data-morph-phase='landed'] .orb-halo {
+  opacity: var(--halo-opacity);
+  transition: opacity 240ms linear, width 180ms ease, height 180ms ease;
+}
+
+main[data-morph-phase='returning'] .orb-halo {
+  opacity: var(--halo-opacity);
+  transition: opacity 160ms linear 160ms, width 180ms ease, height 180ms ease;
+}
+
+main[data-morph-phase='resting'] .orb-halo {
+  opacity: var(--halo-opacity);
+  transition: width 180ms ease, height 180ms ease;
+}
+
+.outline-particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  opacity: var(--outline-opacity, 0);
+  transition: opacity 240ms linear;
+}
+
+main[data-morph-phase='outward'] .outline-particles,
+main[data-morph-phase='landed'] .outline-particles {
+  opacity: var(--outline-opacity);
+  transition: opacity 160ms linear 160ms;
+}
+
+main[data-morph-phase='resting'] .outline-particles {
+  opacity: 0;
+  transition: none;
+  visibility: hidden;
+}
+
+/* Hide the outline before the return can visibly distort the pill perimeter. */
+main[data-morph-phase='returning'] .outline-particles {
+  transition: opacity 80ms linear;
+}
+
+.outline-line {
+  fill: none;
+  stroke: var(--outline-core, #bdeeff);
+  stroke-width: 1.1px;
+  opacity: 0.55;
+}
+
+.outline-light {
+  fill: none;
+  stroke: color-mix(in srgb, var(--outline-core, #bdeeff), #fff 70%);
+  stroke-width: 2px;
+}
+
+/* Only warning light layers animate opacity; their parents retain morph opacity. */
+.warning-light,
+.outline-layers,
+.outline-drawing {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.outline-layers,
+.outline-drawing,
+.warning-base {
+  position: absolute;
+  inset: 0;
+}
+
+.orb-halo .warning-base {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.warning-base circle {
+  fill: #4d1b1e;
+}
+
+.outline-warning-base .outline-line {
+  stroke: #4d1b1e;
+}
+
+main[data-tone='warning'] .warning-light {
+  animation: recording-limit-pulse 1s ease-in-out infinite;
+  will-change: opacity;
+}
+
+main[data-tone='warning'] .outline-light {
+  stroke: color-mix(in srgb, var(--outline-core), #fff 20%);
+}
+
+@keyframes recording-limit-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+main[data-visual-paused='true'],
+main[data-visual-paused='true'] :is(.overlay, .orb-shell, .orb-halo, .echo-threaded-ring, .outline-particles, .warning-light, .preview-pill, .preview-word),
+main[data-visual-paused='true'] .preview-word::after {
+  animation-play-state: paused !important;
+  transition: none !important;
+}
+
+.recording-limit {
+  position: absolute;
+  top: 36px;
+  left: 50%;
+  translate: -50% 0;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  margin: 0;
+  padding: 3px 10px;
+  background: var(--glass-tint-cool), var(--glass-tint-warm), var(--glass-white), rgba(10, 13, 19, 0.91);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #f7f4ef;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  text-align: center;
+  pointer-events: none;
+  z-index: 3;
+}
+
+main.expanded:has(.recording-limit) .overlay {
+  padding-top: 48px;
+}
+
+main.expanded .recording-limit {
+  top: 10px;
+}
+
+/* Delivery during recording retains its text fade; release removes content immediately. */
+.preview-pill {
+  width: 100%;
+  height: 48px;
+  overflow: hidden;
+  padding: 6px 18px;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+
+.preview-clip {
+  height: 36px;
+  overflow: hidden;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 6px rgba(0, 0, 0, 0.3);
+  text-align: center;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.preview-clip.overflowing {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 8px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 8px);
+}
+
+.preview-content {
+  position: relative;
+  transform: translateY(var(--preview-offset, 0px));
+}
+
+@property --preview-trail-edge {
+  syntax: '<length-percentage>';
+  inherits: false;
+  initial-value: 12px;
+}
+
+.preview-word {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+  visibility: hidden;
+  animation: preview-word-reveal 0ms linear forwards;
+}
+
+.preview-word-settled {
+  visibility: visible;
+  clip-path: none;
+}
+
+/* Repeat each word's light without adding layout or per-character elements. */
+.preview-word::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: -12px;
+  padding: 12px;
+  font: inherit;
+  color: transparent;
+  opacity: 0;
+  pointer-events: none;
+  text-shadow: 0 0 3px rgba(255, 255, 255, 0.9), 0 0 8px rgba(189, 238, 255, 0.65);
+  /* Opacity gates the soft trailing window until the reveal starts. */
+  mask-image: linear-gradient(90deg, transparent calc(var(--preview-trail-edge) - 56px), #fff calc(var(--preview-trail-edge) - 8px), #fff var(--preview-trail-edge), transparent var(--preview-trail-edge));
+  -webkit-mask-image: linear-gradient(90deg, transparent calc(var(--preview-trail-edge) - 56px), #fff calc(var(--preview-trail-edge) - 8px), #fff var(--preview-trail-edge), transparent var(--preview-trail-edge));
+  animation:
+    preview-word-trail var(--reveal-duration) linear var(--reveal-delay) forwards,
+    preview-word-trail-fade 400ms ease calc(var(--reveal-delay) + var(--reveal-duration)) forwards;
+}
+
+.preview-word-suspended::after {
+  animation: none !important;
+}
+
+.preview-word-settled::after {
+  display: none;
+}
+
+.preview-caret {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 2px;
+  height: 1lh;
+  background: #fff;
+  box-shadow: 0 0 3px rgba(255, 255, 255, 0.9), 0 0 8px rgba(189, 238, 255, 0.65);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.preview-pill.fading {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes preview-word-reveal {
+  from { visibility: visible; clip-path: inset(-12px 100% -12px -12px); }
+  to { visibility: visible; clip-path: inset(-12px); }
+}
+
+@keyframes preview-word-trail {
+  from { --preview-trail-edge: 12px; opacity: 1; }
+  to { --preview-trail-edge: calc(100% - 12px); opacity: 1; }
+}
+
+@keyframes preview-word-trail-fade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .outline-light,
+  .outline-head {
+    display: none;
+  }
+
+  .preview-word {
+    visibility: visible;
+    clip-path: none;
+    animation: none !important;
+  }
+
+  .preview-caret,
+  .preview-word::after {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .orb-shell,
+  main[data-morph-phase='landed'] .orb-shell {
+    background: rgba(16, 18, 24, 0.92);
+  }
+
+  .expanded .overlay,
+  main[data-mode='orb'].expanded .overlay {
+    background: rgba(16, 18, 24, 0.94);
+  }
+
+  .expanded .overlay::before {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .orb-shell,
+  main[data-morph-phase='landed'] .orb-shell {
+    background: rgba(12, 14, 18, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.46);
+  }
+
+  .expanded .overlay,
+  main[data-mode='orb'].expanded .overlay {
+    background: rgba(12, 14, 18, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.46);
+  }
+
+  .outline-line {
+    opacity: 1;
+  }
+
+  .expanded .overlay::before,
+  .expanded .overlay::after {
+    display: none;
+  }
+
+  .preview-clip {
+    text-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Bundle A — visually hidden, screen-reader accessible */
+/* clip (not display:none / visibility:hidden) keeps the element in the AT tree */
+.sr-only {
+  clip: rect(0, 0, 0, 0);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+/* Bundle A — focus ring: :focus-visible only (not :focus) */
+/* Compact mode: inset dual-stroke via box-shadow so the ring lives entirely inside the
+   80×80 Tauri window envelope and cannot be clipped by main's clip-path / overflow:hidden.
+   Best-effort dual-stroke for keyboard focus visibility on a transparent overlay;
+   outer dark stroke clears 3:1 on light wallpapers (~14.6:1 on white, ~4.76:1 on mid-grey),
+   inner white stroke on dark (~21:1 on black, ~14.6:1 against the outer dark composite).
+   outline: none suppresses the browser default that would paint outside the envelope. */
+.matrix-shell:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 1),
+              inset 0 0 0 5px rgba(0, 0, 0, 0.85);
+}
+
+.collapse-button:focus-visible,
+.detail-actions button:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+  outline-offset: 2px;
+}
+
+/* The notice occupies the existing preview lines below the countdown capsule. */
+.transcription-notice {
+  margin: 0;
+  color: #f7f4ef;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  text-align: center;
+}
+.preview-pill:has(.transcription-notice) {
+  display: grid;
+  align-items: center;
+}

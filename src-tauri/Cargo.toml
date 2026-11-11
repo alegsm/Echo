@@ -1,0 +1,56 @@
+[package]
+name = "echo"
+version = "0.3.2"
+description = "Lightweight desktop-first dictation app."
+authors = ["Alejandro Sanchez"]
+license = "MIT"
+homepage = "https://echostt.app"
+edition = "2021"
+
+[lib]
+name = "echo_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.5", features = ["macos-private-api"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+
+# V1 planned runtime crates. Keep services Rust-owned and renderer-light.
+cpal = "0.18.2"
+keyring = { version = "3.6.3", features = ["apple-native", "windows-native"] }
+reqwest = { version = "0.12", default-features = false, features = ["multipart", "rustls-tls"] }
+rusqlite = { version = "0.41", features = ["bundled", "fallible_uint"] }
+thiserror = "2.0.21"
+uuid = { version = "1.29.0", features = ["v4"] }
+tauri-plugin-clipboard-manager = "2.5.0"
+tauri-plugin-log = "2.10.1"
+log = "0.4.35"
+fern = "0.7.1"
+bytes = "1.12.1"
+
+# macOS-only: Apple frameworks used in platform/macos.rs
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["AVCaptureDevice", "AVMediaFormat", "block2"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSNotification", "NSOperation", "NSString", "block2"] }
+block2 = "0.6.2"
+objc2 = "0.6.5"
+core-graphics = "0.25.0"
+core-foundation = "0.10.1"
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-global-shortcut = "2.4.1"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Media_Audio", "Win32_System_Com"] }
+windows-core = "0.62.2"
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+
+[profile.test]
+opt-level = 1
+
+[dev-dependencies]
+tauri = { version = "2.12.5", features = ["test"] }

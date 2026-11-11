@@ -1,0 +1,140 @@
+.detail {
+  display: none;
+}
+
+main.expanded .detail {
+  position: relative;
+  z-index: 1;
+  align-self: start;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  justify-self: stretch;
+  min-height: 0;
+  padding: 0;
+  width: 100%;
+}
+
+.collapse-button {
+  display: none;
+}
+
+.detail p {
+  color: #f4f4f6;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0;
+  margin: 0;
+}
+
+.detail-content {
+  min-width: 0;
+}
+
+.detail span {
+  color: rgba(255, 255, 255, 0.64);
+  display: block;
+  font-size: 13px;
+  line-height: 1.45;
+  margin-top: 7px;
+  max-height: 82px;
+  overflow: hidden;
+}
+
+.idle-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr;
+  margin: 18px 0 0;
+}
+
+.idle-grid div {
+  min-width: 0;
+}
+
+.idle-grid dt {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin: 0 0 2px;
+  text-transform: uppercase;
+}
+
+.idle-grid dd {
+  color: rgba(255, 255, 255, 0.88);
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.35;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-actions button {
+  background: rgba(255, 255, 255, 0.08);
+  border: 0;
+  border-radius: 999px;
+  color: #f4f4f6;
+  font-size: 13px;
+  min-height: 34px;
+  min-width: 68px;
+  padding: 0 16px;
+}
+
+.detail-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+main.expanded .collapse-button {
+  z-index: 1;
+  align-self: end;
+  background: rgba(255, 255, 255, 0.06);
+  display: block;
+  border: 0;
+  border-radius: 999px;
+  height: 14px;
+  justify-self: center;
+  padding: 0;
+  position: relative;
+  width: 46px;
+}
+
+main.expanded .collapse-button::before {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.82);
+  border-right: 1px solid rgba(255, 255, 255, 0.82);
+  content: '';
+  height: 5px;
+  left: 50%;
+  position: absolute;
+  top: 3px;
+  transform: translateX(-50%) rotate(45deg);
+  width: 5px;
+}
+
+main.expanded .collapse-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.detail-actions button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+@media (prefers-contrast: more) {
+  .detail p {
+    color: #fff;
+  }
+
+  .detail span,
+  .idle-grid dt {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .idle-grid dd,
+  .detail-actions button {
+    color: #fff;
+  }
+}
