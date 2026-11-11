@@ -103,7 +103,7 @@ CI uploads no package artifact and publishes no release. Its Windows build check
 
 Gitleaks scans full fetched history on manual runs; its pull request range scan applies only if the pull request trigger is restored. It redacts detected values. The workflow token has only `contents: read`, and pull requests need no repository secrets. Bun downloads and Cargo dependencies and build outputs are cached; superseded runs are cancelled.
 
-When creating the public repository, the repository owner must enable GitHub private vulnerability reporting so the channel in [SECURITY](../SECURITY.md#report-a-vulnerability) is available. [.github/CODEOWNERS](../.github/CODEOWNERS) names the repository owner for ownership review.
+GitHub private vulnerability reporting, secret scanning and push protection are enabled on the repository, so the channel in [SECURITY](../SECURITY.md#report-a-vulnerability) is available. [.github/CODEOWNERS](../.github/CODEOWNERS) names the repository owner for ownership review.
 
 ## Dependency policy
 

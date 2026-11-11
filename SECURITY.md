@@ -4,7 +4,7 @@
 
 Use GitHub private vulnerability reporting on this repository: open the **Security** tab and select **Report a vulnerability**. Do not disclose an unfixed vulnerability in a public issue. Include the affected version or commit, platform, reproduction steps, expected and observed behavior, and impact. Replace credentials and private transcript content with `<redacted>`.
 
-Private reporting must be enabled by the repository owner when the public repository is created, as recorded in [development](docs/development.md#ci). If the action is unavailable, do not post sensitive reproduction details publicly. No security email address is published here.
+Private vulnerability reporting is enabled on this repository. If the action is unavailable, do not post sensitive reproduction details publicly. No security email address is published here.
 
 ## Boundaries
 
