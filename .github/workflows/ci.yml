@@ -1,6 +1,6 @@
 name: CI
 
-# Manual only: the repository's Actions allowance is limited, so nothing runs on push or pull request.
+# Manual only: nothing runs on push or pull request.
 on:
   workflow_dispatch:
 

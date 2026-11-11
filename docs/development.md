@@ -97,7 +97,7 @@ Extract every `(selector, property)` pair from `build/**/*.css` in both builds a
 
 ## CI
 
-The checked-in [CI workflow](../.github/workflows/ci.yml) runs on manual dispatch only, because the repository's Actions allowance is limited; nothing runs on pushes or pull requests. Start it from the Actions tab and run the [required checks](#required-checks) locally before submitting a change. Its frontend job installs, checks, tests, builds and audits dependencies. Separate macOS and Windows jobs run native formatting, Clippy and tests, in parallel with the frontend job. A separate Windows job runs `bun run tauri build --ci --no-bundle`, and a cargo-deny job checks Rust advisories, licenses, duplicate versions and sources against `src-tauri/deny.toml`.
+The checked-in [CI workflow](../.github/workflows/ci.yml) runs on manual dispatch only; nothing runs on pushes or pull requests. Start it from the Actions tab and run the [required checks](#required-checks) locally before submitting a change. Its frontend job installs, checks, tests, builds and audits dependencies. Separate macOS and Windows jobs run native formatting, Clippy and tests, in parallel with the frontend job. A separate Windows job runs `bun run tauri build --ci --no-bundle`, and a cargo-deny job checks Rust advisories, licenses, duplicate versions and sources against `src-tauri/deny.toml`.
 
 CI uploads no package artifact and publishes no release. Its Windows build check does not create an installer. Passing CI proves neither signing and notarization nor physical microphone, shortcut or paste behavior. Branch protection determines required checks.
 
