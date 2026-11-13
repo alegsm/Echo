@@ -47,6 +47,8 @@ export type EchoSettings = {
   pasteAfterTranscription: boolean;
   restoreClipboard: boolean;
   debugLoggingEnabled: boolean;
+  runInBackground: boolean;
+  launchAtLogin: boolean;
   historyRetentionDays?: number;
 };
 
@@ -69,5 +71,7 @@ export const defaultSettings: EchoSettings = {
   pasteAfterTranscription: true,
   restoreClipboard: true,
   debugLoggingEnabled: false,
+  runInBackground: false,
+  launchAtLogin: false,
   historyRetentionDays: 30
 };

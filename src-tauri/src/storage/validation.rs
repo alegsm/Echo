@@ -11,6 +11,7 @@ impl PersistedSettings {
         let mut changed = Vec::new();
         apply_capture_settings(&mut next, &patch, &mut changed);
         apply_provider_settings(&mut next, &patch, &mut changed);
+        apply_background_settings(&mut next, &patch, &mut changed);
         apply_output_settings(&mut next, patch, &mut changed);
         (next, changed)
     }
@@ -179,6 +180,25 @@ fn merge_map<T: PartialEq>(
     if changed_value {
         changed.push(field);
     }
+}
+
+fn apply_background_settings(
+    next: &mut PersistedSettings,
+    patch: &SettingsPatch,
+    changed: &mut Vec<SettingsField>,
+) {
+    apply(
+        &mut next.run_in_background,
+        patch.run_in_background,
+        SettingsField::RunInBackground,
+        changed,
+    );
+    apply(
+        &mut next.launch_at_login,
+        patch.launch_at_login,
+        SettingsField::LaunchAtLogin,
+        changed,
+    );
 }
 
 fn apply_output_settings(

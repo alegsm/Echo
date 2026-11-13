@@ -259,44 +259,99 @@ fn checkpoint_busy_returns_committed_state_and_retries_without_revision_changes(
     }
 }
 
+// Keep: each Background combination commits one field at a time, reports only real changes and survives reopening.
 #[test]
 fn settings_persist_across_restart_and_reject_stale_windows() {
-    let path = test_database("settings");
+    for (run_in_background, launch_at_login) in
+        [(false, false), (true, false), (false, true), (true, true)]
     {
-        let storage = initialized(&path);
-        let initial = storage.read_settings().unwrap();
-        assert_eq!(initial.revision, 0);
-        let update = storage
-            .update_settings(
-                0,
-                SettingsPatch {
-                    debug_logging_enabled: Some(true),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-        assert_eq!(update.current.revision, 1);
-        assert!(update.current.settings.debug_logging_enabled);
-        assert_eq!(
-            storage
-                .update_settings(0, SettingsPatch::default())
-                .unwrap_err(),
-            StorageError::RevisionConflict {
-                resource: "settings",
-                expected: 0,
-                actual: 1
+        let path = test_database("settings");
+        let expected = {
+            let storage = initialized(&path);
+            let initial = storage.read_settings().unwrap();
+            assert_eq!(initial.revision, 0);
+            assert!(!initial.settings.run_in_background);
+            assert!(!initial.settings.launch_at_login);
+            let update = storage
+                .update_settings(
+                    0,
+                    SettingsPatch {
+                        debug_logging_enabled: Some(true),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            assert_eq!(update.current.revision, 1);
+            assert!(update.current.settings.debug_logging_enabled);
+            assert_eq!(
+                storage
+                    .update_settings(0, SettingsPatch::default())
+                    .unwrap_err(),
+                StorageError::RevisionConflict {
+                    resource: "settings",
+                    expected: 0,
+                    actual: 1
+                }
+            );
+            let mut current = update.current;
+            for (field, value) in [
+                (SettingsField::RunInBackground, run_in_background),
+                (SettingsField::LaunchAtLogin, launch_at_login),
+            ] {
+                current = commit_background(&storage, current, field, value);
             }
+            current
+        };
+        let reopened = initialized(&path);
+        let mut current = reopened.read_settings().unwrap();
+        assert_eq!(current, expected);
+        assert_eq!(
+            (
+                current.settings.run_in_background,
+                current.settings.launch_at_login
+            ),
+            (run_in_background, launch_at_login)
         );
+        assert!(current.settings.debug_logging_enabled);
+        for field in [SettingsField::RunInBackground, SettingsField::LaunchAtLogin] {
+            current = commit_background(&reopened, current, field, false);
+        }
+        drop(reopened);
+        cleanup(&path);
     }
-    let reopened = initialized(&path);
-    assert!(
-        reopened
-            .read_settings()
-            .unwrap()
-            .settings
-            .debug_logging_enabled
-    );
-    cleanup(&path);
+}
+
+/// Commits a one-field Background patch, as the dashboard does, and checks that
+/// only that field changed and that changedFields names it only when it changed.
+fn commit_background(
+    storage: &EchoStorage,
+    current: SettingsEnvelope,
+    field: SettingsField,
+    value: bool,
+) -> SettingsEnvelope {
+    let mut patch = SettingsPatch::default();
+    let mut expected = current.settings.clone();
+    let previous = match field {
+        SettingsField::RunInBackground => {
+            patch.run_in_background = Some(value);
+            std::mem::replace(&mut expected.run_in_background, value)
+        }
+        SettingsField::LaunchAtLogin => {
+            patch.launch_at_login = Some(value);
+            std::mem::replace(&mut expected.launch_at_login, value)
+        }
+        _ => unreachable!(),
+    };
+    let update = storage.update_settings(current.revision, patch).unwrap();
+    assert_eq!(update.current.revision, current.revision + 1);
+    assert_eq!(update.current.settings, expected);
+    let changed = if previous == value {
+        vec![]
+    } else {
+        vec![field]
+    };
+    assert_eq!(update.changed_fields, changed);
+    update.current
 }
 
 #[test]
@@ -524,6 +579,9 @@ fn retired_settings_rows_load_save_and_reopen_without_resetting_live_values() {
         let mut old = serde_json::to_value(&expected).unwrap();
         old.as_object_mut().unwrap().remove("turboModeEnabled");
         old.as_object_mut().unwrap().remove("providerEnvVarNames");
+        // A 0.3.2 row predates the Background settings, which must read as off.
+        old.as_object_mut().unwrap().remove("runInBackground");
+        old.as_object_mut().unwrap().remove("launchAtLogin");
         old.as_object_mut()
             .unwrap()
             .extend(retired.as_object().unwrap().clone());
@@ -600,6 +658,10 @@ fn retired_settings_filter_keeps_live_validation_and_patch_rejection_strict() {
         serde_json::json!({"providerKeySaved": {"xai-stt": "true"}}),
         serde_json::json!({"providerKeyStatuses": {"unknown": "valid"}}),
         serde_json::json!({"providerKeyStatuses": {"xai-stt": "unknown"}}),
+        serde_json::json!({"runInBackground": "true"}),
+        serde_json::json!({"runInBackground": null}),
+        serde_json::json!({"launchAtLogin": 1}),
+        serde_json::json!({"launchAtLogin": null}),
     ] {
         let mut row = serde_json::to_value(PersistedSettings::default()).unwrap();
         row["turboModeEnabled"] = serde_json::json!(false);
@@ -619,9 +681,19 @@ fn retired_settings_filter_keeps_live_validation_and_patch_rejection_strict() {
         serde_json::json!({"turboModeEnabled": false}),
         serde_json::json!({"providerEnvVarNames": {}}),
         serde_json::json!({"turboModeEnabled": null, "providerEnvVarNames": null}),
+        serde_json::json!({"runInBackground": "true"}),
+        serde_json::json!({"launchAtLogin": 1}),
     ] {
         assert!(serde_json::from_value::<SettingsPatch>(patch).is_err());
     }
+    // As for the other booleans, a null patch value means the field is omitted.
+    assert_eq!(
+        serde_json::from_value::<SettingsPatch>(
+            serde_json::json!({"runInBackground": null, "launchAtLogin": null})
+        )
+        .unwrap(),
+        SettingsPatch::default()
+    );
     drop(connection);
     drop(storage);
     cleanup(&path);

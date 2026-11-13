@@ -4,7 +4,8 @@ import { createTranscriptionController } from '../src/lib/ui/dashboard/panels/tr
 import { createPermissionsController } from '../src/lib/ui/dashboard/panels/permissions-controller';
 import { createDebugLogController } from '../src/lib/ui/dashboard/panels/debug-log-controller';
 import { beforeAll, expect, test } from 'bun:test';
-import { compileRenderer } from './helpers/render-svelte';
+import { compileRenderer, sourcePath } from './helpers/render-svelte';
+import { clientHarness } from './helpers/mount-svelte';
 import { defaultSettings, providerOptions } from '../src/lib/core/settings';
 import type { EchoSettings } from '../src/lib/core/settings';
 import type { EchoRuntime } from '../src/lib/core/types';
@@ -52,7 +53,7 @@ test('Settings composes the available sections in order without section navigati
   const html = render();
   expect(html).toMatch(/<h1[^>]*>Settings<\/h1>/);
   const headings = [...html.matchAll(/<h2[^>]*>([^<]+)<\/h2>/g)].map((match) => match[1]);
-  expect(headings).toEqual(['Shortcut', 'Paste', 'Provider', 'Transcription', 'Permissions', 'Debug log']);
+  expect(headings).toEqual(['Shortcut', 'Paste', 'Provider', 'Transcription', 'Permissions', 'Background', 'Debug log']);
   expect(html).not.toContain('Settings sections');
   for (const control of ['Keychain', 'Check key', 'Desktop permissions', 'Detailed logging']) expect(html).toContain(control);
   expect(html).toMatch(/class="[^"]*dashboard-brand[^\"]*" aria-hidden="true"[^>]*>[\s\S]*class="[^"]*brand-wordmark[^\"]*"[^>]*>Echo<\/span>/);
@@ -646,4 +647,144 @@ test('fresh Provider offers a password without credential-source controls', () =
   expect(html).not.toContain('Where the key lives');
   expect(html).not.toContain('Environment variable');
   expect(html).not.toContain('provider-env');
+});
+
+// Keep: Background markup matrix over platform copy, labels and every saved combination, including a fresh install.
+const backgroundLabels = { runInBackground: 'Keep Echo running when the dashboard closes', launchAtLogin: 'Start Echo at login' } as const;
+test.each([
+  ['macos', permissions(true), 'Echo stays in the menu bar. Quit from there or with Cmd+Q.'],
+  ['windows', windowsPermissions, 'Echo stays in the notification area. Quit from its icon.']
+] as const)('Background on %s shows platform help and each saved switch combination', (_platform, native, keepRunningHelp) => {
+  for (const [runInBackground, launchAtLogin] of [[false, false], [true, false], [false, true], [true, true]]) {
+    const html = render({ runInBackground, launchAtLogin }, {}, native);
+    const card = html.match(/<section[^>]*aria-labelledby="settings-background"[^>]*>([\s\S]*?)<\/section>/)![1];
+    expect(card).toMatch(/<h2[^>]*>Background<\/h2>/);
+    expect([...card.matchAll(/<p[^>]*>([^<]+)<\/p>/g)].map((match) => match[1])).toEqual([keepRunningHelp, 'Opens Echo when you sign in.']);
+    for (const [field, checked] of [['runInBackground', runInBackground], ['launchAtLogin', launchAtLogin]] as const) {
+      const button = card.match(new RegExp(`<button[^>]*aria-label="${backgroundLabels[field]}"[^>]*>`))![0];
+      expect(button).toContain('role="switch"');
+      expect(button).toContain(`aria-checked="${checked}"`);
+      expect(button).toContain('aria-disabled="false"');
+    }
+  }
+  const fresh = render({}, {}, native);
+  for (const label of Object.values(backgroundLabels)) expect(fresh).toMatch(new RegExp(`<button[^>]*aria-checked="false"[^>]*aria-label="${label}"`));
+});
+
+// Keep: the intact Background card commits through the native settings client, the only command it sends.
+async function mountBackground() {
+  const harness = await clientHarness(`<script>
+    import BackgroundPanel from '${sourcePath('src/lib/ui/dashboard/panels/BackgroundPanel.svelte')}';
+    import { provideDashboardContext } from '${sourcePath('src/lib/ui/dashboard/context.ts')}';
+    import { defaultSettings } from '${sourcePath('src/lib/core/settings.ts')}';
+    let { client, native } = $props();
+    let settings = $state({ ...defaultSettings, language: 'es' }), alert = $state(null), revision = 0;
+    provideDashboardContext({
+      settings: () => settings, permissions: () => native, setActionError: (message) => { alert = message; },
+      async updateSettings(patch) {
+        const commit = await client.updateSettings(revision, patch);
+        revision = commit.current.revision;
+        return settings = commit.current.settings;
+      }
+    });
+    let shown = $state(true);
+    export const view = { alert: () => alert, settings: () => settings, show: (next) => { shown = next; } };
+  </script>{#if shown}<BackgroundPanel />{/if}`);
+  const commands: string[] = [], patches: unknown[] = [];
+  let saved = { ...defaultSettings, language: 'es' }, revision = 0;
+  let hold: Promise<void> | undefined, rejection: unknown;
+  const client = createNativeStorageClient({
+    async invoke(command, args) {
+      commands.push(command);
+      patches.push(args!.patch);
+      await hold;
+      if (rejection) throw rejection;
+      const previous = { settings: saved, revision };
+      saved = { ...saved, ...args!.patch as object };
+      return { previous, current: { settings: saved, revision: ++revision }, changedFields: Object.keys(args!.patch as object) } as never;
+    },
+    async listen() { return () => {}; }
+  });
+  const { view } = harness.mount({ client, native: permissions(true) }) as { view: { alert(): string | null; settings(): EchoSettings; show(next: boolean): void } };
+  const switches = (label: keyof typeof backgroundLabels) => harness.target.querySelector(`[aria-label="${backgroundLabels[label]}"]`) as unknown as HTMLButtonElement;
+  async function press(label: keyof typeof backgroundLabels) {
+    switches(label).focus();
+    switches(label).click();
+    harness.settleEvents();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    harness.flush();
+  }
+  function holdSaves() {
+    let release!: () => void;
+    hold = new Promise<void>((resolve) => { release = resolve; });
+    return async () => { release(); hold = undefined; for (let i = 0; i < 10; i++) await Promise.resolve(); harness.flush(); };
+  }
+  return { harness, view, commands, patches, switches, press, holdSaves, reject: (error: unknown) => { rejection = error; } };
+}
+
+test('Background switches enable and disable one setting at a time, keep focus while pending and send only settings commits', async () => {
+  const h = await mountBackground();
+  try {
+    expect(h.commands).toEqual([]);
+    const release = h.holdSaves();
+    await h.press('runInBackground');
+    for (const label of ['runInBackground', 'launchAtLogin'] as const) {
+      expect(h.switches(label).getAttribute('aria-disabled')).toBe('true');
+      expect(h.switches(label).hasAttribute('disabled')).toBe(false);
+    }
+    expect(h.harness.window.document.activeElement).toBe(h.switches('runInBackground') as never);
+    await h.press('runInBackground');
+    await h.press('launchAtLogin');
+    expect(h.patches).toEqual([{ runInBackground: true }]);
+    await release();
+    expect(h.switches('runInBackground').getAttribute('aria-checked')).toBe('true');
+    expect(h.switches('runInBackground').getAttribute('aria-disabled')).toBe('false');
+    await h.press('launchAtLogin');
+    await h.press('runInBackground');
+    expect(h.patches).toEqual([{ runInBackground: true }, { launchAtLogin: true }, { runInBackground: false }]);
+    expect(h.view.settings()).toEqual({ ...defaultSettings, language: 'es', runInBackground: false, launchAtLogin: true });
+    expect([h.switches('runInBackground').getAttribute('aria-checked'), h.switches('launchAtLogin').getAttribute('aria-checked')]).toEqual(['false', 'true']);
+    expect(h.commands).toEqual(Array(3).fill('update_persisted_settings'));
+  } finally { await h.harness.cleanup(); }
+});
+
+test('a rejected Background save keeps committed switches, reports the shared alert and clears it on the next save', async () => {
+  const h = await mountBackground();
+  try {
+    await h.press('launchAtLogin');
+    h.reject(new Error('private native detail'));
+    await h.press('launchAtLogin');
+    expect(h.view.alert()).toBe('Settings could not be saved. Try again.');
+    expect(h.view.settings().launchAtLogin).toBe(true);
+    expect(h.switches('launchAtLogin').getAttribute('aria-checked')).toBe('true');
+    h.reject(undefined);
+    const release = h.holdSaves();
+    await h.press('launchAtLogin');
+    expect(h.view.alert()).toBeNull();
+    await release();
+    expect(h.switches('launchAtLogin').getAttribute('aria-checked')).toBe('false');
+    expect(h.patches).toEqual([{ launchAtLogin: true }, { launchAtLogin: false }, { launchAtLogin: false }]);
+    expect(h.commands).toEqual(Array(3).fill('update_persisted_settings'));
+  } finally { await h.harness.cleanup(); }
+});
+
+// Keep: Settings unmounts on navigation, and the pending guard must outlive the card.
+test('a pending Background save stays guarded after Settings unmounts and mounts again', async () => {
+  const h = await mountBackground();
+  try {
+    const release = h.holdSaves();
+    await h.press('runInBackground');
+    h.view.show(false); h.harness.flush();
+    expect(h.harness.target.querySelector('[role="switch"]')).toBeNull();
+    h.view.show(true); h.harness.flush();
+    for (const label of ['runInBackground', 'launchAtLogin'] as const) {
+      expect(h.switches(label).getAttribute('aria-disabled')).toBe('true');
+      await h.press(label);
+    }
+    expect(h.commands).toEqual(['update_persisted_settings']);
+    await release();
+    expect([h.switches('runInBackground').getAttribute('aria-checked'), h.switches('launchAtLogin').getAttribute('aria-checked')]).toEqual(['true', 'false']);
+    for (const label of ['runInBackground', 'launchAtLogin'] as const) expect(h.switches(label).getAttribute('aria-disabled')).toBe('false');
+    expect(h.patches).toEqual([{ runInBackground: true }]);
+  } finally { await h.harness.cleanup(); }
 });
