@@ -1,3 +1,4 @@
+pub mod background_mode;
 pub mod credentials;
 pub mod dictation;
 pub mod runtime;

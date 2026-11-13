@@ -17,6 +17,7 @@ mod storage;
 #[cfg(test)]
 mod test_support;
 
+use services::background_mode;
 use services::runtime::EchoRuntime;
 use services::transcription_jobs::TranscriptionJobs;
 
@@ -34,6 +35,11 @@ pub fn run() {
     let log_dispatch =
         bounded_log::dispatch(log_directory).expect("Echo log writer should initialize");
     let application = tauri::Builder::default()
+        // Registered first so a second launch hands off before any other plugin starts.
+        // Its arguments and working directory are ignored: it can only show the dashboard.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            background_mode::show_dashboard(app)
+        }))
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
@@ -48,14 +54,17 @@ pub fn run() {
         .manage(providers::http_client().expect("Provider HTTP client should initialize"))
         .manage(EchoRuntime::default())
         .manage(TranscriptionJobs::default())
+        .on_menu_event(background_mode::handle_menu_event)
         .setup(app_setup::setup_application)
         .invoke_handler(for_each_echo_command!(generate_echo_handlers))
         .build(context)
         .expect("error while building Echo");
 
-    application.run(|app, event| {
-        if matches!(event, tauri::RunEvent::Exit) {
-            app_setup::shutdown_application(app);
-        }
+    application.run(|app, event| match event {
+        tauri::RunEvent::Exit => app_setup::shutdown_application(app),
+        // The overlay is always visible, so has_visible_windows says nothing about the dashboard.
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Reopen { .. } => background_mode::show_dashboard(app),
+        _ => {}
     });
 }
