@@ -23,6 +23,7 @@
     "allow-probe-provider",
     "allow-get-persisted-settings",
     "allow-update-persisted-settings",
+    "allow-get-launch-at-login-status",
     "allow-list-persisted-history",
     "allow-get-persisted-transcript",
     "allow-delete-persisted-transcript",

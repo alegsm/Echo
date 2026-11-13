@@ -4,6 +4,8 @@ import { createTranscriptionController } from '../src/lib/ui/dashboard/panels/tr
 import { createPermissionsController } from '../src/lib/ui/dashboard/panels/permissions-controller';
 import { createDebugLogController } from '../src/lib/ui/dashboard/panels/debug-log-controller';
 import { beforeAll, expect, test } from 'bun:test';
+import { fileURLToPath } from 'node:url';
+import { compile } from 'svelte/compiler';
 import { compileRenderer, sourcePath } from './helpers/render-svelte';
 import { clientHarness } from './helpers/mount-svelte';
 import { defaultSettings, providerOptions } from '../src/lib/core/settings';
@@ -671,14 +673,20 @@ test.each([
   for (const label of Object.values(backgroundLabels)) expect(fresh).toMatch(new RegExp(`<button[^>]*aria-checked="false"[^>]*aria-label="${label}"`));
 });
 
-// Keep: the intact Background card commits through the native settings client, the only command it sends.
-async function mountBackground() {
+// Keep: the intact Background card commits through the native settings client and reads
+// login-item status through the Tauri invoke boundary; these are the only commands it sends.
+const STATUS = 'get_launch_at_login_status', UPDATE = 'update_persisted_settings';
+type BackgroundOptions = {
+  initial?: Partial<EchoSettings>;
+  native?: DesktopPermissions;
+  status?: (saved: EchoSettings) => Promise<{ registered: boolean }>;
+};
+async function mountBackground(options: BackgroundOptions = {}) {
   const harness = await clientHarness(`<script>
     import BackgroundPanel from '${sourcePath('src/lib/ui/dashboard/panels/BackgroundPanel.svelte')}';
     import { provideDashboardContext } from '${sourcePath('src/lib/ui/dashboard/context.ts')}';
-    import { defaultSettings } from '${sourcePath('src/lib/core/settings.ts')}';
-    let { client, native } = $props();
-    let settings = $state({ ...defaultSettings, language: 'es' }), alert = $state(null), revision = 0;
+    let { client, native, initial } = $props();
+    let settings = $state(initial), alert = $state(null), revision = 0;
     provideDashboardContext({
       settings: () => settings, permissions: () => native, setActionError: (message) => { alert = message; },
       async updateSettings(patch) {
@@ -691,8 +699,15 @@ async function mountBackground() {
     export const view = { alert: () => alert, settings: () => settings, show: (next) => { shown = next; } };
   </script>{#if shown}<BackgroundPanel />{/if}`);
   const commands: string[] = [], patches: unknown[] = [];
-  let saved = { ...defaultSettings, language: 'es' }, revision = 0;
+  let saved: EchoSettings = { ...defaultSettings, language: 'es', ...options.initial }, revision = 0;
   let hold: Promise<void> | undefined, rejection: unknown;
+  let status = options.status ?? (async (current: EchoSettings) => ({ registered: current.launchAtLogin }));
+  harness.install('isTauri', true);
+  (harness.window as any).__TAURI_INTERNALS__ = { invoke: (command: string) => {
+    commands.push(command);
+    if (command !== STATUS) throw new Error(`unexpected ${command}`);
+    return status(saved);
+  } };
   const client = createNativeStorageClient({
     async invoke(command, args) {
       commands.push(command);
@@ -705,27 +720,41 @@ async function mountBackground() {
     },
     async listen() { return () => {}; }
   });
-  const { view } = harness.mount({ client, native: permissions(true) }) as { view: { alert(): string | null; settings(): EchoSettings; show(next: boolean): void } };
+  const { view } = harness.mount({ client, native: options.native ?? permissions(true), initial: saved }) as { view: { alert(): string | null; settings(): EchoSettings; show(next: boolean): void } };
+  const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); harness.flush(); };
+  await settle();
   const switches = (label: keyof typeof backgroundLabels) => harness.target.querySelector(`[aria-label="${backgroundLabels[label]}"]`) as unknown as HTMLButtonElement;
   async function press(label: keyof typeof backgroundLabels) {
     switches(label).focus();
     switches(label).click();
     harness.settleEvents();
-    for (let i = 0; i < 10; i++) await Promise.resolve();
-    harness.flush();
+    await settle();
   }
   function holdSaves() {
     let release!: () => void;
     hold = new Promise<void>((resolve) => { release = resolve; });
-    return async () => { release(); hold = undefined; for (let i = 0; i < 10; i++) await Promise.resolve(); harness.flush(); };
+    return async () => { release(); hold = undefined; await settle(); };
   }
-  return { harness, view, commands, patches, switches, press, holdSaves, reject: (error: unknown) => { rejection = error; } };
+  // Every line the card shows under its switch labels, in order.
+  const lines = () => [...harness.target.querySelectorAll('section p')].map((line) => ({ text: line.textContent, alert: line.getAttribute('role') === 'alert' }));
+  return { harness, view, commands, patches, switches, press, holdSaves, settle, lines,
+    reject: (error: unknown) => { rejection = error; },
+    setStatus: (next: typeof status) => { status = next; } };
 }
+
+function deferredStatus() {
+  let resolve!: (value: { registered: boolean }) => void;
+  const promise = new Promise<{ registered: boolean }>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+const macHelp = 'Echo stays in the menu bar. Quit from there or with Cmd+Q.';
+const helpLines = [{ text: macHelp, alert: false }, { text: 'Opens Echo when you sign in.', alert: false }];
 
 test('Background switches enable and disable one setting at a time, keep focus while pending and send only settings commits', async () => {
   const h = await mountBackground();
   try {
-    expect(h.commands).toEqual([]);
+    expect(h.commands).toEqual([STATUS]);
     const release = h.holdSaves();
     await h.press('runInBackground');
     for (const label of ['runInBackground', 'launchAtLogin'] as const) {
@@ -744,7 +773,7 @@ test('Background switches enable and disable one setting at a time, keep focus w
     expect(h.patches).toEqual([{ runInBackground: true }, { launchAtLogin: true }, { runInBackground: false }]);
     expect(h.view.settings()).toEqual({ ...defaultSettings, language: 'es', runInBackground: false, launchAtLogin: true });
     expect([h.switches('runInBackground').getAttribute('aria-checked'), h.switches('launchAtLogin').getAttribute('aria-checked')]).toEqual(['false', 'true']);
-    expect(h.commands).toEqual(Array(3).fill('update_persisted_settings'));
+    expect(h.commands).toEqual([STATUS, UPDATE, UPDATE, STATUS, UPDATE]);
   } finally { await h.harness.cleanup(); }
 });
 
@@ -764,7 +793,7 @@ test('a rejected Background save keeps committed switches, reports the shared al
     await release();
     expect(h.switches('launchAtLogin').getAttribute('aria-checked')).toBe('false');
     expect(h.patches).toEqual([{ launchAtLogin: true }, { launchAtLogin: false }, { launchAtLogin: false }]);
-    expect(h.commands).toEqual(Array(3).fill('update_persisted_settings'));
+    expect(h.commands).toEqual([STATUS, UPDATE, STATUS, UPDATE, STATUS, UPDATE, STATUS]);
   } finally { await h.harness.cleanup(); }
 });
 
@@ -781,10 +810,127 @@ test('a pending Background save stays guarded after Settings unmounts and mounts
       expect(h.switches(label).getAttribute('aria-disabled')).toBe('true');
       await h.press(label);
     }
-    expect(h.commands).toEqual(['update_persisted_settings']);
+    expect(h.commands).toEqual([STATUS, UPDATE, STATUS]);
     await release();
     expect([h.switches('runInBackground').getAttribute('aria-checked'), h.switches('launchAtLogin').getAttribute('aria-checked')]).toEqual(['true', 'false']);
     for (const label of ['runInBackground', 'launchAtLogin'] as const) expect(h.switches(label).getAttribute('aria-disabled')).toBe('false');
     expect(h.patches).toEqual([{ runInBackground: true }]);
+  } finally { await h.harness.cleanup(); }
+});
+
+// Keep: a refused registration keeps the committed switch, shows the card's own alert
+// with the native detail instead of the shared one, and the next save clears it (AC3, AC4).
+test.each([['on', false], ['off', true]] as const)('a refused login registration shows "could not be turned %s" in the card', async (verb, start) => {
+  const h = await mountBackground({ initial: { launchAtLogin: start } });
+  try {
+    h.reject('login_item_failed: Permission denied (os error 13)');
+    await h.press('launchAtLogin');
+    expect(h.lines()).toEqual([...helpLines, { text: `Start Echo at login could not be turned ${verb}: Permission denied (os error 13)`, alert: true }]);
+    expect(h.view.alert()).toBeNull();
+    expect(h.view.settings().launchAtLogin).toBe(start);
+    expect(h.switches('launchAtLogin').getAttribute('aria-checked')).toBe(String(start));
+    expect(h.commands).toEqual([STATUS, UPDATE, STATUS]);
+    h.reject(undefined);
+    await h.press('launchAtLogin');
+    expect(h.lines()).toEqual(helpLines);
+    expect(h.switches('launchAtLogin').getAttribute('aria-checked')).toBe(String(!start));
+  } finally { await h.harness.cleanup(); }
+});
+
+// Keep: the card alert reads as an error and wraps long native detail, while the mismatch
+// line keeps the muted help style. Happy-dom resolves the cascade against the card's
+// own paragraph rule; rendered colour still needs the running app.
+test('the login alert uses the error tone and wraps while the mismatch line stays help text', async () => {
+  const panel = fileURLToPath(new URL('../src/lib/ui/dashboard/panels/BackgroundPanel.svelte', import.meta.url));
+  const css = compile(await Bun.file(panel).text(), { filename: panel, css: 'external' }).css!.code;
+  const h = await mountBackground({ status: async () => ({ registered: true }) });
+  try {
+    h.reject('login_item_failed: Permission denied (os error 13)');
+    await h.press('launchAtLogin');
+    const style = h.harness.window.document.createElement('style');
+    style.textContent = `:root { --tone-error-text: rgb(255, 0, 0); --echo-fg-3: rgb(0, 0, 255); }\n${css}`;
+    h.harness.window.document.head.append(style);
+    const looks = [...h.harness.target.querySelectorAll('section p')].slice(1).map((line) => {
+      const computed = h.harness.window.getComputedStyle(line);
+      return [line.textContent, line.getAttribute('role'), computed.color, computed.overflowWrap];
+    });
+    expect(looks).toEqual([
+      ['Opens Echo when you sign in.', null, 'rgb(0, 0, 255)', ''],
+      ['macOS still starts Echo at login. Turn the switch on and off again.', null, 'rgb(0, 0, 255)', ''],
+      ['Start Echo at login could not be turned on: Permission denied (os error 13)', 'alert', 'rgb(255, 0, 0)', 'anywhere']
+    ]);
+  } finally { await h.harness.cleanup(); }
+});
+
+// Keep: the mismatch line appears only when the OS and the saved setting disagree, names
+// the platform, and stays hidden when the status read fails (AC9).
+test.each([
+  ['macos', permissions(true), 'macOS'],
+  ['windows', windowsPermissions, 'Windows']
+] as const)('Background on %s shows a mismatch line only when the OS disagrees with the saved setting', async (_platform, native, os) => {
+  const help = native === windowsPermissions ? 'Echo stays in the notification area. Quit from its icon.' : macHelp;
+  for (const [saved, registered, line] of [
+    [true, false, `Not registered with ${os}. Turn the switch off and on again.`],
+    [false, true, `${os} still starts Echo at login. Turn the switch on and off again.`],
+    [true, true, null],
+    [false, false, null],
+    [true, 'fails', null],
+    [false, 'fails', null]
+  ] as const) {
+    const h = await mountBackground({ initial: { launchAtLogin: saved }, native,
+      status: async () => { if (registered === 'fails') throw new Error('unavailable'); return { registered }; } });
+    try {
+      expect(h.lines().map((entry) => entry.text)).toEqual([help, 'Opens Echo when you sign in.', ...(line ? [line] : [])]);
+      expect(h.lines().some((entry) => entry.alert)).toBe(false);
+    } finally { await h.harness.cleanup(); }
+  }
+});
+
+// Keep: turning the switch off and on re-reads status after each save, so the line clears,
+// and the stale status never shows a wrong line while the re-read is pending (AC10).
+test('turning Start Echo at login off and on clears the mismatch line once registration succeeds', async () => {
+  const h = await mountBackground({ initial: { launchAtLogin: true }, status: async () => ({ registered: false }) });
+  try {
+    expect(h.lines().at(-1)!.text).toBe('Not registered with macOS. Turn the switch off and on again.');
+    await h.press('launchAtLogin');
+    expect(h.lines()).toEqual(helpLines);
+    const postSaveRead = deferredStatus();
+    h.setStatus(() => postSaveRead.promise);
+    await h.press('launchAtLogin');
+    expect(h.lines()).toEqual(helpLines);
+    postSaveRead.resolve({ registered: true });
+    await h.settle();
+    expect(h.lines()).toEqual(helpLines);
+    expect(h.commands).toEqual([STATUS, UPDATE, STATUS, UPDATE, STATUS]);
+  } finally { await h.harness.cleanup(); }
+});
+
+// Keep: a status read older than the newest one issued, or resolving after the card
+// unmounts, never changes the card (status ordering).
+test('a delayed mount status read does not restore a mismatch after a save', async () => {
+  const mountRead = deferredStatus();
+  const h = await mountBackground({ status: () => mountRead.promise });
+  try {
+    h.setStatus(async () => ({ registered: true }));
+    await h.press('launchAtLogin');
+    expect(h.lines()).toEqual(helpLines);
+    mountRead.resolve({ registered: false });
+    await h.settle();
+    expect(h.lines()).toEqual(helpLines);
+  } finally { await h.harness.cleanup(); }
+});
+
+test('a status read resolving after the card unmounts changes nothing', async () => {
+  const firstRead = deferredStatus();
+  const h = await mountBackground({ initial: { launchAtLogin: true }, status: () => firstRead.promise });
+  try {
+    h.view.show(false); h.harness.flush();
+    firstRead.resolve({ registered: false });
+    await h.settle();
+    h.setStatus(() => new Promise(() => {}));
+    h.view.show(true); h.harness.flush();
+    await h.settle();
+    expect(h.lines()).toEqual(helpLines);
+    expect(h.commands).toEqual([STATUS, STATUS]);
   } finally { await h.harness.cleanup(); }
 });

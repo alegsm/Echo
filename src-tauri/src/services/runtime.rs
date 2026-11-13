@@ -294,6 +294,11 @@ impl EchoRuntime {
         Ok(self.lock()?.settings.run_in_background)
     }
 
+    /// The committed "Start Echo at login" setting.
+    pub fn launch_at_login(&self) -> Result<bool, RuntimeError> {
+        Ok(self.lock()?.settings.launch_at_login)
+    }
+
     /// Poisons the state lock so tests can prove callers degrade safely when it is unavailable.
     #[cfg(test)]
     pub(crate) fn poison_lock(&self) {

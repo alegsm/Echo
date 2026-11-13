@@ -1,8 +1,8 @@
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Transaction};
 
 use super::models::{
-    PersistedSettings, SettingsEnvelope, SettingsPatch, SettingsUpdate, StorageError,
-    StorageResult, SETTINGS_SCHEMA_VERSION,
+    PersistedSettings, SettingsEnvelope, SettingsField, SettingsPatch, SettingsUpdate,
+    StorageError, StorageResult, SETTINGS_SCHEMA_VERSION,
 };
 use super::EchoStorage;
 
@@ -67,25 +67,106 @@ impl EchoStorage {
     ) -> StorageResult<SettingsUpdate> {
         let mut connection = self.lock()?;
         let transaction = connection.transaction()?;
-        let previous = read(&transaction)?;
-        ensure_revision(expected_revision, previous.revision)?;
-        let (mut next, changed_fields) = previous.settings.apply_patch(patch);
-        next.validate()?;
-        let current = write(&transaction, previous.revision + 1, next)?;
-        if changed_fields.contains(&super::models::SettingsField::HistoryRetentionDays) {
-            super::retention::purge_with_current_time(
-                &transaction,
-                current.settings.history_retention_days,
-            )?;
-        }
+        let staged = stage(&transaction, expected_revision, patch)?;
         transaction.commit()?;
-        Ok(SettingsUpdate {
-            cleanup_status: self.cleanup_deleted_pages(&connection),
-            previous,
-            current,
-            changed_fields,
-        })
+        Ok(self.finish(&connection, staged))
     }
+
+    /// Commits a dashboard patch. A patch that changes launchAtLogin commits only after
+    /// `set_login_item(new value)` succeeds, inside the same transaction and under the
+    /// storage lock, so no other settings or credential write can land in between and a
+    /// refused registration leaves the row and its revision unchanged. If the COMMIT
+    /// itself fails, `set_login_item(previous value)` undoes the OS change; a failed undo
+    /// is logged, and the dashboard's status check then reports the mismatch.
+    pub fn update_settings_with_login_item<E>(
+        &self,
+        expected_revision: u64,
+        patch: SettingsPatch,
+        set_login_item: impl FnMut(bool) -> Result<(), E>,
+    ) -> Result<SettingsUpdate, E>
+    where
+        E: From<StorageError> + std::fmt::Display,
+    {
+        self.update_settings_with_login_item_using(
+            expected_revision,
+            patch,
+            set_login_item,
+            |transaction| transaction.commit(),
+        )
+    }
+
+    /// `commit` is the COMMIT step, replaceable so tests can make it fail.
+    pub(super) fn update_settings_with_login_item_using<E>(
+        &self,
+        expected_revision: u64,
+        patch: SettingsPatch,
+        mut set_login_item: impl FnMut(bool) -> Result<(), E>,
+        commit: impl FnOnce(Transaction<'_>) -> rusqlite::Result<()>,
+    ) -> Result<SettingsUpdate, E>
+    where
+        E: From<StorageError> + std::fmt::Display,
+    {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction().map_err(StorageError::from)?;
+        let staged = stage(&transaction, expected_revision, patch)?;
+        let login_item_changed = staged
+            .changed_fields
+            .contains(&SettingsField::LaunchAtLogin);
+        if login_item_changed {
+            // Dropping the transaction on this error rolls the row back.
+            set_login_item(staged.current.settings.launch_at_login)?;
+        }
+        if let Err(error) = commit(transaction) {
+            if login_item_changed {
+                if let Err(undo) = set_login_item(staged.previous.settings.launch_at_login) {
+                    log::warn!(
+                        "Login item could not be restored after a failed settings commit: {undo}"
+                    );
+                }
+            }
+            return Err(StorageError::from(error).into());
+        }
+        Ok(self.finish(&connection, staged))
+    }
+
+    fn finish(&self, connection: &Connection, staged: StagedUpdate) -> SettingsUpdate {
+        SettingsUpdate {
+            cleanup_status: self.cleanup_deleted_pages(connection),
+            previous: staged.previous,
+            current: staged.current,
+            changed_fields: staged.changed_fields,
+        }
+    }
+}
+
+/// A settings write made inside an open transaction, not yet committed.
+struct StagedUpdate {
+    previous: SettingsEnvelope,
+    current: SettingsEnvelope,
+    changed_fields: Vec<SettingsField>,
+}
+
+fn stage(
+    transaction: &Transaction<'_>,
+    expected_revision: u64,
+    patch: SettingsPatch,
+) -> StorageResult<StagedUpdate> {
+    let previous = read(transaction)?;
+    ensure_revision(expected_revision, previous.revision)?;
+    let (mut next, changed_fields) = previous.settings.apply_patch(patch);
+    next.validate()?;
+    let current = write(transaction, previous.revision + 1, next)?;
+    if changed_fields.contains(&SettingsField::HistoryRetentionDays) {
+        super::retention::purge_with_current_time(
+            transaction,
+            current.settings.history_retention_days,
+        )?;
+    }
+    Ok(StagedUpdate {
+        previous,
+        current,
+        changed_fields,
+    })
 }
 
 pub(super) fn read(connection: &Connection) -> StorageResult<SettingsEnvelope> {
@@ -183,10 +264,7 @@ mod credential_tests {
         assert_eq!(update.current.revision, 2);
         assert!(update.current.settings.debug_logging_enabled);
         assert!(update.current.settings.provider_key_saved[provider.as_str()]);
-        assert_eq!(
-            update.changed_fields,
-            [super::super::SettingsField::ProviderKeySaved]
-        );
+        assert_eq!(update.changed_fields, [SettingsField::ProviderKeySaved]);
         drop(storage);
         let reopened = super::super::test_support::initialized(&path);
         assert_eq!(reopened.read_settings().unwrap(), update.current);

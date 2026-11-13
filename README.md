@@ -62,6 +62,7 @@ Echo reads saved keys from the OS credential store when you explicitly find or c
 | --- | --- | --- |
 | Database | `~/Library/Application Support/app.echostt.desktop/echo.sqlite3` | `%LOCALAPPDATA%\app.echostt.desktop\echo.sqlite3` |
 | Logs | `~/Library/Logs/app.echostt.desktop/` | `%LOCALAPPDATA%\app.echostt.desktop\logs\` |
+| Start Echo at login | `~/Library/LaunchAgents/Echo.plist` | `Echo` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` |
 
 The log directory contains `Echo.log`, `Echo.1.log` and `Echo.2.log`. Each is bounded to 1 MiB by [the native log writer](src-tauri/src/bounded_log.rs).
 
@@ -71,7 +72,7 @@ For ordinary history cleanup, use History's Delete, Clear or retention controls.
 
 To remove diagnostic files, turn off Debug log, quit Echo, then delete `Echo.log`, `Echo.1.log` and `Echo.2.log` from the log directory above. This does not clear History, settings or credentials.
 
-For a full local reset, first restore any Fn preference changed through Echo on macOS and remove saved provider keys through Settings > Provider. Quit Echo, then delete `echo.sqlite3` and any adjacent `echo.sqlite3-wal` and `echo.sqlite3-shm` files from the data directory above. Remove the three log files separately. This resets local History and settings; removing the database alone does not remove OS credentials. Keys left in Keychain or Credential Manager can be reused through **Find saved key** after the reset, so remove them in Settings > Provider first if you don't want that.
+For a full local reset, first turn off **Start Echo at login** in Settings > Background, restore any Fn preference changed through Echo on macOS and remove saved provider keys through Settings > Provider. Quit Echo, then delete `echo.sqlite3` and any adjacent `echo.sqlite3-wal` and `echo.sqlite3-shm` files from the data directory above. Remove the three log files separately. This resets local History and settings; removing the database alone does not remove OS credentials. Keys left in Keychain or Credential Manager can be reused through **Find saved key** after the reset, so remove them in Settings > Provider first if you don't want that.
 
 Deletion does not retroactively compact free pages left by older versions, erase backups, or erase data already sent to providers or copied by other apps. [Storage mechanics](docs/architecture.md#storage) explain these limits.
 

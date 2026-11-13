@@ -994,3 +994,148 @@ fn partial_history_preserves_provider_error_through_delivery() {
     drop(storage);
     cleanup(&path);
 }
+
+/// The error a login-item closure returns in these tests; storage errors pass through it.
+#[derive(Debug, PartialEq)]
+enum LoginItemTestError {
+    Storage(StorageError),
+    Refused(&'static str),
+}
+
+impl From<StorageError> for LoginItemTestError {
+    fn from(error: StorageError) -> Self {
+        Self::Storage(error)
+    }
+}
+
+impl std::fmt::Display for LoginItemTestError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{self:?}")
+    }
+}
+
+fn launch_at_login_patch(on: bool) -> SettingsPatch {
+    SettingsPatch {
+        launch_at_login: Some(on),
+        ..Default::default()
+    }
+}
+
+// Keep: a refused registration rolls back the whole transaction, including the
+// retention purge staged with it, so the row, its revision and History are unchanged.
+#[test]
+fn login_item_refusal_rolls_back_the_row_and_its_retention_purge() {
+    let path = test_database("login-item-rollback");
+    let storage = initialized(&path);
+    storage
+        .append_transcript(transcript("expired", "2000-01-01T00:00:00Z"))
+        .unwrap();
+    let before = storage.read_settings().unwrap();
+    let mut calls = Vec::new();
+    let error = storage
+        .update_settings_with_login_item(
+            0,
+            SettingsPatch {
+                launch_at_login: Some(true),
+                history_retention_days: PatchValue::Value(Some(7)),
+                ..Default::default()
+            },
+            |on| {
+                calls.push(on);
+                Err(LoginItemTestError::Refused("denied"))
+            },
+        )
+        .unwrap_err();
+    assert_eq!(error, LoginItemTestError::Refused("denied"));
+    assert_eq!(calls, [true]);
+    assert_eq!(storage.read_settings().unwrap(), before);
+    assert!(storage.get_transcript("expired").unwrap().is_some());
+    drop(storage);
+    cleanup(&path);
+}
+
+// Keep: a credential commit issued while registration runs waits on the storage lock
+// and lands after the login-item save, whichever way registration ends.
+#[test]
+fn competing_credential_commit_waits_for_login_item_registration() {
+    let provider = crate::providers::ProviderId::GroqWhisperTurbo;
+    for registration_succeeds in [true, false] {
+        let path = test_database("login-item-competing");
+        let storage = initialized(&path);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let result =
+                storage.update_settings_with_login_item(0, launch_at_login_patch(true), |_| {
+                    let sender = sender.clone();
+                    let storage = &storage;
+                    scope.spawn(move || {
+                        let _ = sender.send(storage.set_provider_key_saved(provider, true));
+                    });
+                    assert!(
+                        receiver
+                            .recv_timeout(std::time::Duration::from_millis(200))
+                            .is_err(),
+                        "credential commit landed while registration held the row open"
+                    );
+                    if registration_succeeds {
+                        Ok(())
+                    } else {
+                        Err(LoginItemTestError::Refused("denied"))
+                    }
+                });
+            assert_eq!(result.is_ok(), registration_succeeds);
+        });
+        let credential = receiver.recv().unwrap().unwrap().unwrap();
+        let expected_revision = if registration_succeeds { 2 } else { 1 };
+        assert_eq!(credential.current.revision, expected_revision);
+        assert_eq!(
+            credential.current.settings.launch_at_login,
+            registration_succeeds
+        );
+        assert!(credential.current.settings.provider_key_saved[provider.as_str()]);
+        assert_eq!(storage.read_settings().unwrap(), credential.current);
+        drop(storage);
+        cleanup(&path);
+    }
+}
+
+// Keep: when COMMIT fails after registration succeeded, the OS change is undone with
+// the previous value; a failed undo still returns the storage error, not the undo's.
+#[test]
+fn failed_commit_undoes_the_login_item_change() {
+    for (start_on, undo_succeeds) in [(false, true), (false, false), (true, true)] {
+        let path = test_database("login-item-commit-fails");
+        let storage = initialized(&path);
+        if start_on {
+            storage
+                .update_settings_with_login_item(0, launch_at_login_patch(true), |_| {
+                    Ok::<(), LoginItemTestError>(())
+                })
+                .unwrap();
+        }
+        let before = storage.read_settings().unwrap();
+        let mut calls = Vec::new();
+        let error = storage
+            .update_settings_with_login_item_using(
+                before.revision,
+                launch_at_login_patch(!start_on),
+                |on| {
+                    calls.push(on);
+                    if calls.len() == 2 && !undo_succeeds {
+                        return Err(LoginItemTestError::Refused("undo denied"));
+                    }
+                    Ok(())
+                },
+                |transaction| {
+                    drop(transaction);
+                    Err(rusqlite::Error::ExecuteReturnedResults)
+                },
+            )
+            .unwrap_err();
+        assert_eq!(error, LoginItemTestError::Storage(StorageError::Database));
+        assert_eq!(calls, [!start_on, start_on]);
+        assert_eq!(storage.read_settings().unwrap(), before);
+        drop(storage);
+        cleanup(&path);
+    }
+}

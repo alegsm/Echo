@@ -20,6 +20,7 @@ macro_rules! for_each_echo_command {
             report_transcript_delivery => crate::commands::stt::report_transcript_delivery,
             get_persisted_settings => crate::commands::storage::settings::get_persisted_settings,
             update_persisted_settings => crate::commands::storage::settings::update_persisted_settings,
+            get_launch_at_login_status => crate::commands::login_item::get_launch_at_login_status,
             list_persisted_history => crate::commands::storage::history::list_persisted_history,
             get_persisted_transcript => crate::commands::storage::history::get_persisted_transcript,
             delete_persisted_transcript => crate::commands::storage::history::delete_persisted_transcript,
@@ -180,6 +181,50 @@ mod tests {
                 < search.find("spawn_blocking").unwrap()
         );
         assert!(!search.contains("echo-credentials-updated"));
+    }
+
+    // Keep: only the dashboard may read login-item status, after native authorization,
+    // and no capability carries the autostart plugin's JS enable, disable or status grants.
+    #[test]
+    fn launch_at_login_status_is_dashboard_only() {
+        let names = for_each_echo_command!(collect_command_names);
+        assert!(names.contains(&"get_launch_at_login_status"));
+        let grant = "allow-get-launch-at-login-status";
+        let compiled: serde_json::Value =
+            serde_json::from_str(include_str!("../gen/schemas/capabilities.json")).unwrap();
+        for (source, surface, granted) in [
+            (
+                include_str!("../capabilities/dashboard.json"),
+                "dashboard",
+                1,
+            ),
+            (include_str!("../capabilities/overlay.json"), "overlay", 0),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(source).unwrap();
+            for grants in [
+                &capability["permissions"],
+                &compiled[surface]["permissions"],
+            ] {
+                let grants = grants.as_array().unwrap();
+                assert_eq!(
+                    grants.iter().filter(|p| *p == grant).count(),
+                    granted,
+                    "{surface}"
+                );
+                assert!(!grants.iter().any(|p| p
+                    .as_str()
+                    .is_some_and(|name| name.starts_with("autostart:"))));
+            }
+        }
+        let handler = include_str!("commands/login_item.rs")
+            .split("pub fn get_launch_at_login_status(")
+            .nth(1)
+            .unwrap();
+        assert!(
+            handler.find("require_dashboard(&window)?").unwrap()
+                < handler.find("is_registered(").unwrap()
+        );
+        assert!(!handler.contains("require_known_window"));
     }
 
     // Keep: neither renderer may bypass native field filtering with plugin log strings.

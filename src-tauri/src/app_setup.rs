@@ -1,6 +1,7 @@
 use crate::audio::{AudioCapturePolicy, DesktopAudioCapture, TrustedCaptureOwner};
 use crate::commands::stt::segments::CaptureDictations;
 use crate::services::background_mode::{self, CloseAction};
+use crate::services::login_item;
 use crate::services::runtime::EchoRuntime;
 use crate::services::transcription_jobs::TranscriptionJobs;
 use crate::{commands, diagnostics, platform};
@@ -43,6 +44,7 @@ fn show_tray_and_dashboard(app: &tauri::App) {
     if background_mode::dashboard_visible_at_start(launched_at_login, &runtime) {
         background_mode::show_dashboard(app.handle());
     }
+    login_item::refresh_at_startup(app.handle(), runtime.launch_at_login().unwrap_or(false));
 }
 
 pub fn shutdown_application(app: &AppHandle) {
