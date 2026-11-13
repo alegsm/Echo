@@ -25,7 +25,9 @@ Runtime requirements: macOS WebKit 16.4 or later, or Windows WebView2 evergreen.
 
 In the final minute before the ten-minute recording limit, the overlay shows a countdown above the orb and pulses its light red once per second. Reduced motion keeps the red light steady. The warning also applies while holding the shortcut.
 
-Settings controls language, custom prompts, automatic paste, clipboard restoration and Debug log. Phrasebook lets you add, search and remove spelling terms. Terms bias recognition on all providers; they do not guarantee a spelling. Custom prompts apply only to Groq and OpenAI.
+Settings controls language, custom prompts, automatic paste, clipboard restoration, Debug log, keeping Echo running when the dashboard closes and starting Echo at login. Phrasebook lets you add, search and remove spelling terms. Terms bias recognition on all providers; they do not guarantee a spelling. Custom prompts apply only to Groq and OpenAI.
+
+By default, closing the dashboard quits Echo. To keep dictating after you close it, turn on **Keep Echo running when the dashboard closes** in Settings > Background. Closing the dashboard then hides it, and the shortcut, overlay and transcription keep working while an icon shows in the macOS menu bar or the Windows notification area. To bring the dashboard back, choose **Open Echo** from the icon's menu, left-click the icon on Windows, click the Dock icon on macOS, or start Echo again. To quit while it runs in the background, choose **Quit Echo** from the icon's menu, or press Cmd+Q on macOS. **Start Echo at login** adds a per-user login item. After you sign in, Echo then starts with the dashboard hidden if background mode is on, and with the dashboard open if it is off. The [development guide](docs/development.md#background-mode) lists what to check on a packaged build.
 
 ### History
 
@@ -66,13 +68,15 @@ Echo reads saved keys from the OS credential store when you explicitly find or c
 
 The log directory contains `Echo.log`, `Echo.1.log` and `Echo.2.log`. Each is bounded to 1 MiB by [the native log writer](src-tauri/src/bounded_log.rs).
 
+The login record holds only the path to Echo and the `--launched-at-login` argument, never transcripts, settings or secrets. Turning **Start Echo at login** off removes it. On Windows it also removes the Task Manager startup switch for Echo under `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run`.
+
 ### Delete local data
 
 For ordinary history cleanup, use History's Delete, Clear or retention controls. Settings and provider credentials remain. SQLite overwrites deleted transcript content from this version onward and attempts to truncate the write-ahead log. If cleanup remains pending because the database is busy, a later purge or launch attempts it again.
 
 To remove diagnostic files, turn off Debug log, quit Echo, then delete `Echo.log`, `Echo.1.log` and `Echo.2.log` from the log directory above. This does not clear History, settings or credentials.
 
-For a full local reset, first turn off **Start Echo at login** in Settings > Background, restore any Fn preference changed through Echo on macOS and remove saved provider keys through Settings > Provider. Quit Echo, then delete `echo.sqlite3` and any adjacent `echo.sqlite3-wal` and `echo.sqlite3-shm` files from the data directory above. Remove the three log files separately. This resets local History and settings; removing the database alone does not remove OS credentials. Keys left in Keychain or Credential Manager can be reused through **Find saved key** after the reset, so remove them in Settings > Provider first if you don't want that.
+For a full local reset, first turn off **Start Echo at login** in Settings > Background, restore any Fn preference changed through Echo on macOS and remove saved provider keys through Settings > Provider. Quit Echo, then delete `echo.sqlite3` and any adjacent `echo.sqlite3-wal` and `echo.sqlite3-shm` files from the data directory above. Remove the three log files separately. Deleting the Echo app on macOS does not remove the login record, so turn the switch off before you delete or uninstall Echo on either OS. This resets local History and settings; removing the database alone does not remove OS credentials. Keys left in Keychain or Credential Manager can be reused through **Find saved key** after the reset, so remove them in Settings > Provider first if you don't want that.
 
 Deletion does not retroactively compact free pages left by older versions, erase backups, or erase data already sent to providers or copied by other apps. [Storage mechanics](docs/architecture.md#storage) explain these limits.
 
