@@ -65,6 +65,11 @@ pub struct PersistedSettings {
     pub restore_clipboard: bool,
     pub debug_logging_enabled: bool,
     pub history_retention_days: Option<u32>,
+    /// Rows written by 0.3.2 lack the Background fields; they read as off.
+    #[serde(default)]
+    pub run_in_background: bool,
+    #[serde(default)]
+    pub launch_at_login: bool,
 }
 
 impl Default for PersistedSettings {
@@ -90,6 +95,8 @@ impl Default for PersistedSettings {
             restore_clipboard: true,
             debug_logging_enabled: false,
             history_retention_days: Some(30),
+            run_in_background: false,
+            launch_at_login: false,
         }
     }
 }
@@ -114,6 +121,8 @@ pub struct SettingsPatch {
     pub debug_logging_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "PatchValue::is_missing")]
     pub history_retention_days: PatchValue<u32>,
+    pub run_in_background: Option<bool>,
+    pub launch_at_login: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -172,6 +181,8 @@ pub enum SettingsField {
     RestoreClipboard,
     DebugLoggingEnabled,
     HistoryRetentionDays,
+    RunInBackground,
+    LaunchAtLogin,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

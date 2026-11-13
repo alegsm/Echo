@@ -1,5 +1,7 @@
 use crate::audio::{AudioCapturePolicy, DesktopAudioCapture, TrustedCaptureOwner};
 use crate::commands::stt::segments::CaptureDictations;
+use crate::services::background_mode::{self, CloseAction};
+use crate::services::login_item;
 use crate::services::runtime::EchoRuntime;
 use crate::services::transcription_jobs::TranscriptionJobs;
 use crate::{commands, diagnostics, platform};
@@ -26,7 +28,23 @@ pub fn setup_application(app: &mut tauri::App) -> Result<(), Box<dyn std::error:
     if let Err(error) = diagnostics::harden_log_directory_permissions(app.handle()) {
         log::warn!("Could not harden diagnostic log permissions: {error}");
     }
+    show_tray_and_dashboard(app);
     Ok(())
+}
+
+// tauri.conf.json creates the dashboard hidden, so a login launch never flashes it.
+fn show_tray_and_dashboard(app: &tauri::App) {
+    let runtime = app.state::<EchoRuntime>();
+    background_mode::apply_run_in_background(
+        app.handle(),
+        runtime.run_in_background().unwrap_or(false),
+    );
+    let launched_at_login =
+        std::env::args().any(|argument| argument == background_mode::LAUNCHED_AT_LOGIN_ARG);
+    if background_mode::dashboard_visible_at_start(launched_at_login, &runtime) {
+        background_mode::show_dashboard(app.handle());
+    }
+    login_item::refresh_at_startup(app.handle(), runtime.launch_at_login().unwrap_or(false));
 }
 
 pub fn shutdown_application(app: &AppHandle) {
@@ -136,12 +154,24 @@ fn configure_dashboard(app: &tauri::App, audio_capture: &DesktopAudioCapture) {
     let app_handle = app.handle().clone();
     let capture = audio_capture.clone();
     let jobs = app.state::<TranscriptionJobs>().inner().clone();
+    let runtime = app.state::<EchoRuntime>().inner().clone();
+    let window = dashboard.clone();
     dashboard.on_window_event(move |event| {
-        if matches!(event, WindowEvent::CloseRequested { .. }) {
-            let _ = capture.cleanup_owner(TrustedCaptureOwner::from_window_label("dashboard"));
-            let _ = jobs.cancel_owner("dashboard");
-            app_handle.exit(0);
+        let WindowEvent::CloseRequested { api, .. } = event else {
+            return;
+        };
+        // Hiding skips owner cleanup: the dashboard holds no capture or job grant, and
+        // the overlay keeps dictation running.
+        if background_mode::close_action(&runtime) == CloseAction::Hide {
+            api.prevent_close();
+            if let Err(error) = window.hide() {
+                log::warn!("Could not hide the dashboard: {error}");
+            }
+            return;
         }
+        let _ = capture.cleanup_owner(TrustedCaptureOwner::from_window_label("dashboard"));
+        let _ = jobs.cancel_owner("dashboard");
+        app_handle.exit(0);
     });
     #[cfg(target_os = "windows")]
     let _ = dashboard.set_decorations(false);

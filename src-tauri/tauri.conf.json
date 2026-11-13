@@ -45,7 +45,8 @@
         "hiddenTitle": true,
         "alwaysOnTop": false,
         "skipTaskbar": false,
-        "center": true
+        "center": true,
+        "visible": false
       }
     ],
     "security": {

@@ -4,6 +4,7 @@
   import ProviderPanel from './ProviderPanel.svelte';
   import TranscriptionPanel from './TranscriptionPanel.svelte';
   import PermissionsPanel from './PermissionsPanel.svelte';
+  import BackgroundPanel from './BackgroundPanel.svelte';
   import DebugLogRow from './DebugLogRow.svelte';
   import { getDashboardContext } from '../context.js';
   const ctx = getDashboardContext();
@@ -17,6 +18,7 @@
     <ProviderPanel />
     <TranscriptionPanel />
     <PermissionsPanel />
+    <BackgroundPanel />
     <DebugLogRow />
   </div>
 </div>

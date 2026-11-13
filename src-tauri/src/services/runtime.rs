@@ -289,6 +289,27 @@ impl EchoRuntime {
         Ok(Some(inner.envelope()))
     }
 
+    /// The committed "Keep Echo running when the dashboard closes" setting.
+    pub fn run_in_background(&self) -> Result<bool, RuntimeError> {
+        Ok(self.lock()?.settings.run_in_background)
+    }
+
+    /// The committed "Start Echo at login" setting.
+    pub fn launch_at_login(&self) -> Result<bool, RuntimeError> {
+        Ok(self.lock()?.settings.launch_at_login)
+    }
+
+    /// Poisons the state lock so tests can prove callers degrade safely when it is unavailable.
+    #[cfg(test)]
+    pub(crate) fn poison_lock(&self) {
+        let runtime = self.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = runtime.inner.lock();
+            panic!("poisoning the runtime lock for a test");
+        })
+        .join();
+    }
+
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, RuntimeInner>, RuntimeError> {
         self.inner.lock().map_err(|_| RuntimeError::LockUnavailable)
     }

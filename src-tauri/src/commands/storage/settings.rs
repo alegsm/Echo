@@ -2,7 +2,10 @@
 
 use tauri::{Manager, WebviewWindow};
 
-use crate::storage::{SettingsEnvelope, SettingsField, SettingsPatch, SettingsUpdate};
+use crate::services::login_item;
+use crate::storage::{
+    EchoStorage, SettingsEnvelope, SettingsField, SettingsPatch, SettingsUpdate, StorageError,
+};
 
 use super::super::window_authorization::{require_dashboard, require_known_window};
 use super::{events, synchronization};
@@ -30,16 +33,59 @@ pub fn update_persisted_settings(
     window: WebviewWindow,
 ) -> Result<SettingsUpdate, String> {
     require_dashboard(&window)?;
-    let update = window
-        .state::<crate::storage::EchoStorage>()
-        .update_settings(expected_revision, patch)
-        .map_err(|error| error.to_string())?;
-    let synchronization = synchronization::apply_settings(&window, &update.current);
-    events::emit_settings(&window, &update);
-    let retention_event = emit_retention_change(&window, &update);
-    synchronization?;
-    retention_event?;
+    let app = window.app_handle();
+    commit_settings(
+        &window.state::<EchoStorage>(),
+        expected_revision,
+        patch,
+        |on| login_item::set_registered(app, on),
+        |update| {
+            let synchronization = synchronization::apply_settings(&window, &update.current);
+            events::emit_settings(&window, update);
+            let retention_event = emit_retention_change(&window, update);
+            synchronization?;
+            retention_event
+        },
+    )
+}
+
+/// The renderer matches this prefix to show the Background card's login-item alert.
+const LOGIN_ITEM_FAILED: &str = "login_item_failed";
+
+/// Commits the patch, then hands the committed update to `publish` (runtime, tray and
+/// settings event). A launchAtLogin change commits only if `set_login_item` succeeds,
+/// and is otherwise refused with `login_item_failed: <detail>`, no change and nothing
+/// published. `publish` runs after the storage lock is released because it reads storage.
+fn commit_settings(
+    storage: &EchoStorage,
+    expected_revision: u64,
+    patch: SettingsPatch,
+    mut set_login_item: impl FnMut(bool) -> Result<(), String>,
+    publish: impl FnOnce(&SettingsUpdate) -> Result<(), String>,
+) -> Result<SettingsUpdate, String> {
+    let update = storage
+        .update_settings_with_login_item(expected_revision, patch, |on| {
+            set_login_item(on)
+                .map_err(|detail| SaveRefusal(format!("{LOGIN_ITEM_FAILED}: {detail}")))
+        })
+        .map_err(|SaveRefusal(message)| message)?;
+    publish(&update)?;
     Ok(update)
+}
+
+/// A refused save as the renderer receives it.
+struct SaveRefusal(String);
+
+impl From<StorageError> for SaveRefusal {
+    fn from(error: StorageError) -> Self {
+        Self(error.to_string())
+    }
+}
+
+impl std::fmt::Display for SaveRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
 }
 
 fn emit_retention_change(window: &WebviewWindow, update: &SettingsUpdate) -> Result<(), String> {
@@ -60,7 +106,84 @@ fn emit_retention_change(window: &WebviewWindow, update: &SettingsUpdate) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{EchoStorage, PersistedSettings};
+    use crate::storage::PersistedSettings;
+
+    // Keep: launchAtLogin commits only when the OS accepts it; a refusal returns the
+    // renderer's prefix, leaves the row and revision unchanged and publishes nothing to
+    // the runtime, tray or settings event; a commit publishes exactly the committed
+    // update; other fields never touch the OS (AC1 to AC5 at the command seam).
+    #[test]
+    fn login_item_changes_commit_only_when_registration_succeeds() {
+        let other_field = SettingsPatch {
+            debug_logging_enabled: Some(true),
+            ..Default::default()
+        };
+        let launch = |on| SettingsPatch {
+            launch_at_login: Some(on),
+            ..Default::default()
+        };
+        for (start_on, patch, registration, expected_calls, expected) in [
+            (false, launch(true), Ok(()), vec![true], Ok(true)),
+            (true, launch(false), Ok(()), vec![false], Ok(false)),
+            (
+                false,
+                launch(true),
+                Err("denied"),
+                vec![true],
+                Err("login_item_failed: denied"),
+            ),
+            (
+                true,
+                launch(false),
+                Err("busy"),
+                vec![false],
+                Err("login_item_failed: busy"),
+            ),
+            (false, other_field.clone(), Err("unused"), vec![], Ok(false)),
+            (true, other_field, Err("unused"), vec![], Ok(true)),
+            (true, launch(true), Err("unused"), vec![], Ok(true)),
+        ] {
+            let path = crate::storage::test_support::test_database("login-item-seam");
+            let storage = crate::storage::test_support::initialized(&path);
+            if start_on {
+                commit_settings(&storage, 0, launch(true), |_| Ok(()), |_| Ok(())).unwrap();
+            }
+            let before = storage.read_settings().unwrap();
+            let mut calls = Vec::new();
+            let mut published = Vec::new();
+            let result = commit_settings(
+                &storage,
+                before.revision,
+                patch,
+                |on| {
+                    calls.push(on);
+                    registration.map_err(str::to_owned)
+                },
+                |update| {
+                    published.push(update.clone());
+                    Ok(())
+                },
+            );
+            assert_eq!(calls, expected_calls);
+            let after = storage.read_settings().unwrap();
+            match expected {
+                Ok(on) => {
+                    let update = result.unwrap();
+                    assert_eq!(update.current, after);
+                    assert_eq!(after.revision, before.revision + 1);
+                    assert_eq!(after.settings.launch_at_login, on);
+                    assert_eq!(published, vec![update]);
+                }
+                Err(message) => {
+                    assert_eq!(result.unwrap_err(), message);
+                    assert_eq!(after, before);
+                    assert_eq!(published, Vec::new());
+                }
+            }
+            drop(storage);
+            crate::storage::test_support::cleanup(&path);
+        }
+    }
 
     // Keep: native settings persist independently of absent, incomplete or malformed receipts.
     #[test]

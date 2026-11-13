@@ -29,6 +29,25 @@ vector at its own size and stored as a 32-bit PNG in the order 32, 16, 20, 24, 4
 256. The 32 px frame comes first because Tauri uses the ICO's first frame as the window icon.
 The macOS-style [icon.ico](../../src-tauri/icons/icon.ico) stays as the shared bundle icon.
 
+The tray icons for background mode live in [icons/tray/](../../src-tauri/icons/tray/).
+[macos-template.png](../../src-tauri/icons/tray/macos-template.png) is a 36 px (18 pt at 2x)
+menu bar template: the small-a line in black on transparent, with no tile, light or glow, and
+the 4.8-unit small-a stroke. macOS tints it for light and dark menu bars. The line with its
+caps spans about 90% of the width, and its swings are centred vertically. Windows uses the
+approved 16 px (small-b) and 32 px (small-a) tile frames from `windows/icon.ico`, unchanged,
+as [windows-16.png](../../src-tauri/icons/tray/windows-16.png) and
+[windows-32.png](../../src-tauri/icons/tray/windows-32.png); Echo picks the 32 px frame when
+the display scale is 150% or more. To recut them, run from the repository root:
+
+```sh
+sed -e 's/viewBox="0 0 100 100" width="100" height="100"/viewBox="19.5 17 61 61" width="36" height="36"/' \
+    -e 's/stroke="#bdeeff" stroke-width="3.6"/stroke="#000000" stroke-width="4.8"/' \
+    design/brand/decay-small-a.svg | rsvg-convert -w 36 -h 36 -o src-tauri/icons/tray/macos-template.png
+```
+
+Copy the Windows frames out of the ICO as the PNG files it stores, without re-rendering them;
+any ICO reader that writes a frame's bytes unchanged works.
+
 The Windows installer wizard has two images, set by the same config and kept out of `icons/`.
 [sidebar.bmp](../../src-tauri/installer/windows/sidebar.bmp) is the 164×314 px Welcome and Finish
 panel: the `#0a0d13` tile colour edge to edge, the master line with its frozen light and glows

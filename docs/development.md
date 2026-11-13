@@ -19,6 +19,13 @@ The frontend uses SvelteKit 3, adapter-static 4, vite-plugin-svelte 7, Svelte 5,
 
 The explicit build target is Chrome 111, Edge 111, Firefox 114 and Safari 16.4. Supported desktop webviews are macOS WebKit 16.4 or later and Windows WebView2 evergreen.
 
+## Before you run a build
+
+Background mode adds two behaviors that reach outside a checkout. Read both before you run `bun run tauri:dev` or a packaged build.
+
+- **Single instance.** Echo allows one running copy per app identifier. After a packaged Echo of this version has started, `bun run tauri:dev` with the same identifier (`app.echostt.desktop`) hands its launch to the packaged Echo through the single-instance plugin and exits, so no development window opens. Quit the packaged Echo first, from the tray's **Quit Echo** or with Cmd+Q on macOS. A running development build does the same to a packaged launch. A development build also writes a real login item for its own executable if you turn on **Start Echo at login**. Turn it off before you quit.
+- **Settings downgrade.** This version stores `runInBackground` and `launchAtLogin` in the settings row, and any settings write adds both. Echo 0.3.2 rejects a row with unknown keys and does not start. Back up `echo.sqlite3` (see [locations](../README.md#locations)) before you run this version against a database you want to keep. To go back to 0.3.2, restore the backup or remove both keys from the row. [Storage](architecture.md#storage) has the details.
+
 ## macOS source build
 
 Prerequisites: the pinned Bun and Rust toolchains, Xcode command-line tools and a working Apple SDK. Install Xcode command-line tools with `xcode-select --install` if needed, then run the dependency setup above.
@@ -129,3 +136,17 @@ Review History, Copy, cancelled and confirmed deletion, clearing and retention. 
 Enable Debug log in Settings before reproducing capture failures. Use the [canonical locations and deletion guidance](../README.md#privacy-and-local-data). Logs must contain lifecycle evidence without audio, transcripts, prompts, keys, clipboard contents or device names and IDs. Enabling diagnostics during an existing capture starts full observation on the next recording.
 
 Measure release-to-paste time on a release build for speech across pauses and sentence continuations. The target of about two seconds for a sixty-second dictation is an acceptance target, not an automated-test guarantee. Record provider, platform, build provenance, observed results and skipped checks. Real microphone acquisition, the macOS Fn event tap, Windows hooks, permission prompts, real provider accounts and OS insertion require host evidence.
+
+### Background mode
+
+Run these on a packaged build on each OS, started from `/Applications` or a similar folder rather than from Downloads or a disk image, and quit any development build first. The setting names are **Keep Echo running when the dashboard closes** and **Start Echo at login** in Settings > Background. The [architecture note](architecture.md#background-mode) describes the behavior behind each item.
+
+1. Default install: closing the dashboard (the macOS red button, the Windows Close button or Alt+F4) quits Echo. No tray icon shows and no login item exists.
+2. Turn on **Keep Echo running when the dashboard closes**. The icon appears at once. Close the dashboard, dictate into another app with the shortcut and confirm the paste lands. Choose **Open Echo** and confirm History shows the dictation. Choose **Quit Echo** and confirm the process ends in Activity Monitor or Task Manager.
+3. macOS: with the dashboard hidden, Cmd+Q quits Echo. Start it again, close the dashboard, then click the Dock icon and confirm the dashboard returns. A click on the menu bar icon opens the menu, and the icon renders in light and dark menu bars.
+4. Windows: a left-click on the icon shows the dashboard and a right-click opens the menu. Alt+F4 hides the dashboard. Starting Echo again from the Start menu shows the running dashboard and leaves one process. Repeat the second-start check on macOS by running the executable from Terminal.
+5. Turn on **Start Echo at login**. The OS lists Echo (System Settings > General > Login Items on macOS, Task Manager > Startup apps on Windows). Sign out and in. With background mode on, Echo starts with the dashboard hidden and the icon showing. With it off, the dashboard opens. An unsigned or ad-hoc macOS build lists a weak name; that is expected.
+6. Break the login record, then repair it. On Windows, disable Echo in Task Manager > Startup apps. On macOS, delete `~/Library/LaunchAgents/Echo.plist`. Reopen Settings > Background. The card shows "Not registered with Windows" or "Not registered with macOS" and asks you to turn the switch off and on. Doing so restores the entry and clears the line. Also turn Echo off under System Settings > Allow in the Background on macOS and confirm that no mismatch line appears; this is a known limit.
+7. macOS: with **Start Echo at login** on, move `Echo.app` to another folder and start it from there. Sign out and in and confirm the login item still starts Echo from the new location.
+8. Windows: uninstall Echo with the NSIS installer while **Start Echo at login** is on. Startup apps no longer lists Echo and the `Echo` value is gone from `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. Record the installer type, because an MSI uninstall is not covered by this check.
+9. Turn both settings off. The icon disappears at once, the OS no longer lists Echo, and on macOS `Echo.plist` is gone. On Windows the `Echo` values under `Run` and `Explorer\StartupApproved\Run` are gone.
