@@ -41,6 +41,7 @@
     <span class="status-copy"><kbd>{ctx.settings().pushToTalkShortcut || 'None'}</kbd></span>
     <span aria-hidden="true" class="status-dot" class:needs-attention={ctx.permissionCheckState() === 'unknown' || missing !== false}></span><span class="status-copy provider-label">{provider?.label}</span>
   </button>
+  <p class="dashboard-version"><span class="sr-only">Version </span><span aria-hidden="true">v</span>{__APP_VERSION__}</p>
 </header>
 
 <style>
@@ -97,6 +98,8 @@
   kbd { display: inline-block; max-width: 100%; font: 400 11px/1.3 var(--mono); padding: 4px 7px; border-radius: var(--r-bar); background: var(--echo-fill-2); overflow-wrap: anywhere; }
   .status-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--tone-success); }
   .needs-attention { background: var(--tone-handsfree); }
+  .dashboard-version { position: relative; flex: none; margin: -16px 0 0; text-align: center; white-space: nowrap; font: 400 11px/1.3 var(--mono); color: var(--echo-fg-3); }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   @media (max-width: 719px) {
     .dashboard-nav { margin-left: 8px; padding: 16px 4px; gap: 20px; }
     .dashboard-destinations { padding: 4px; }
@@ -104,5 +107,6 @@
     .nav-label, .brand-wordmark { display: none; }
     .status-copy { display: none; }
     .dashboard-status { min-height: 44px; padding: 12px 0; }
+    .dashboard-version { margin-top: -12px; }
   }
 </style>

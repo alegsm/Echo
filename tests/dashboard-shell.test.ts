@@ -103,6 +103,9 @@ test('the floating left rail keeps named destinations before status and content'
   }
   expect(html.indexOf('aria-label="History"')).toBeLessThan(html.indexOf('class="dashboard-status'));
   expect(html.indexOf('class="dashboard-status')).toBeLessThan(html.indexOf('<main'));
+  const version = html.indexOf(`<span aria-hidden="true">v</span>${(await Bun.file(new URL('../package.json', import.meta.url)).json()).version}</p>`);
+  expect(version).toBeGreaterThan(html.indexOf('class="dashboard-status'));
+  expect(version).toBeLessThan(html.indexOf('</header>'));
 });
 
 function historyPanel(ctx: Parameters<typeof createHistoryController>[0], effects: Partial<Parameters<typeof createHistoryController>[2]> = {}) {

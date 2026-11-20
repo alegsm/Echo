@@ -6,6 +6,8 @@ import { compile, compileModule } from 'svelte/compiler';
 
 type Renderer = (props?: Record<string, unknown>) => string;
 const rootDirectory = fileURLToPath(new URL('../../', import.meta.url));
+// Mirrors the `define` in vite.config.ts.
+const appVersion: string = (await Bun.file(join(rootDirectory, 'package.json')).json()).version;
 
 // Bundle intact components with Svelte's public compiler and server renderer.
 export function compileRenderer(component: URL): Promise<Renderer>;
@@ -26,6 +28,7 @@ async function compileComponent(component: string | URL, client: boolean): Promi
   const resolveDir = componentPath ? dirname(componentPath) : rootDirectory;
   const result = await Bun.build({
     entrypoints: ['echo-render-test'], target: 'bun', conditions: client ? ['svelte', 'browser'] : ['svelte'], throw: false,
+    define: { __APP_VERSION__: JSON.stringify(appVersion) },
     plugins: [{ name: 'render-svelte', setup(build) {
       // Plugin-loaded sources need explicit package-scope lookup on a cold Bun resolver.
       build.onResolve({ filter: /^#/ }, ({ path, resolveDir }) => ({
