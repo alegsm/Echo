@@ -1,9 +1,14 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { invoke, isTauri } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
+  import { createUpdateClient } from '#lib/runtime/desktop/update-client.ts';
   import { dashboardGlow, observeDashboardFrame, observeDashboardIntersection } from '../dashboard-motion';
   import EchoMark, { MARK_SHINE_PERIOD_MS } from '#lib/ui/brand/EchoMark.svelte';
   import { providerOptions } from '#lib/core/settings.ts';
   import { getDashboardContext, type SettingsTab } from '../context.js';
   import { applicablePermissionKinds } from '../panels/permissions-controller';
+  import { createUpdateController, updateAnnouncement, updateBusy, updateLabel, type UpdateView } from './update-controller';
 
   let { activeTab, onselect, motionAllowed = true }: { motionAllowed?: boolean; activeTab: SettingsTab; onselect(tab: SettingsTab): void } = $props();
   let markVisible = $state(false);
@@ -22,6 +27,13 @@
   let permissionStatus = $derived(ctx.permissionCheckState() === 'unknown' ? 'Permissions unknown'
     : missing === undefined ? 'Checking permissions'
     : missing ? 'Permissions need attention' : 'Permissions granted');
+  const update = $state<{ view: UpdateView }>({ view: { kind: 'hidden' } });
+  const updates = isTauri() ? createUpdateController(createUpdateClient({ invoke, listen }), update) : undefined;
+  onMount(() => updates?.mount());
+  let updateView = $derived(update.view);
+  let ringDash = $derived(updateView.kind === 'downloading'
+    ? updateView.percent === null ? '25 100' : `${updateView.percent} 100`
+    : '100 100');
 </script>
 
 <header class="dashboard-nav">
@@ -41,7 +53,23 @@
     <span class="status-copy"><kbd>{ctx.settings().pushToTalkShortcut || 'None'}</kbd></span>
     <span aria-hidden="true" class="status-dot" class:needs-attention={ctx.permissionCheckState() === 'unknown' || missing !== false}></span><span class="status-copy provider-label">{provider?.label}</span>
   </button>
-  <p class="dashboard-version"><span class="sr-only">Version </span><span aria-hidden="true">v</span>{__APP_VERSION__}</p>
+  <div class="dashboard-version" class:has-update={updateView.kind !== 'hidden'}>
+    <p><span class="sr-only">Version </span><span aria-hidden="true">v</span>{__APP_VERSION__}</p>
+    {#if updateView.kind !== 'hidden'}
+      {@const label = updateLabel(updateView)}
+      <button class="update-button" class:failed={updateView.kind === 'failed'} type="button" aria-label={label} title={label} aria-disabled={updateBusy(updateView) ? 'true' : undefined} onclick={() => void updates?.install()}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          {#if updateView.kind === 'available' || updateView.kind === 'failed'}<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14" />
+          {:else}
+            {@const indeterminate = updateView.kind === 'downloading' && updateView.percent === null}
+            <circle class="ring-track" cx="12" cy="12" r="8.5" />
+            <circle class="ring-arc" class:spinning={indeterminate && motionAllowed} cx="12" cy="12" r="8.5" pathLength="100" stroke-dasharray={ringDash} />
+          {/if}
+        </svg>
+      </button>
+    {/if}
+    <span class="sr-only" role="status">{updateAnnouncement(updateView)}</span>
+  </div>
 </header>
 
 <style>
@@ -99,6 +127,18 @@
   .status-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--tone-success); }
   .needs-attention { background: var(--tone-handsfree); }
   .dashboard-version { position: relative; flex: none; margin: -16px 0 0; text-align: center; white-space: nowrap; font: 400 11px/1.3 var(--mono); color: var(--echo-fg-3); }
+  .dashboard-version p { margin: 0; }
+  .dashboard-version.has-update { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; }
+  .update-button { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border-radius: var(--r-bar); background: var(--echo-fill-2); color: var(--echo-fg); }
+  .update-button:hover, .update-button:focus-visible { background: var(--echo-fill-3); }
+  .update-button[aria-disabled='true'] { cursor: default; }
+  .update-button.failed { color: var(--tone-error-text); }
+  .ring-track { stroke: var(--echo-fill-3); }
+  /* Start the arc at twelve o'clock. */
+  .ring-arc { transform: rotate(-90deg); transform-box: fill-box; transform-origin: center; }
+  /* The only update motion; DashboardApp's motionAllowed already folds in reduced motion. */
+  .ring-arc.spinning { animation: update-ring-spin 1.2s linear infinite; }
+  @keyframes update-ring-spin { to { transform: rotate(270deg); } }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   @media (max-width: 719px) {
     .dashboard-nav { margin-left: 8px; padding: 16px 4px; gap: 20px; }
@@ -108,5 +148,6 @@
     .status-copy { display: none; }
     .dashboard-status { min-height: 44px; padding: 12px 0; }
     .dashboard-version { margin-top: -12px; }
+    .dashboard-version.has-update { flex-direction: column; }
   }
 </style>
