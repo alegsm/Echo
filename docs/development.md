@@ -83,6 +83,60 @@ The [build script](../scripts/build-windows.ps1) verifies toolchains, installs f
 
 Outputs are under `src-tauri/target/x86_64-pc-windows-msvc/release/bundle`. A Mac-side typecheck of Windows modules does not prove a Windows application build or runtime behavior.
 
+## Publish a release
+
+A release puts signed builds for both platforms on a GitHub release and, last, the `latest.json` manifest that installed copies of Echo read to offer the update. [Architecture](architecture.md#updates) describes the update client. Installed copies never downgrade, so a bad release is corrected only by a higher fixed version or a manual reinstall.
+
+**Update key.** The release operator generates the update key pair once, at a hidden prompt, straight into 1Password; the key has no password. The public half replaces `ECHO_UPDATE_PUBLIC_KEY_NOT_SET` in `plugins.updater.pubkey` of [tauri.conf.json](../src-tauri/tauri.conf.json) in the release commit. While the placeholder is committed, [update-manifest.ts](../scripts/update-manifest.ts) and `build-windows.ps1 -Release` refuse to run. The macOS build does not read the pubkey; a macOS release is refused the same way when update-manifest.ts runs, so no manifest can offer it. The private key reaches a build only through the `TAURI_SIGNING_PRIVATE_KEY` environment variable, injected by the secret store, for example with 1Password CLI's `op run`. No script reads it from a file in the repository, prints it or passes it as an argument. `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` can stay unset: the Tauri CLI assumes an empty password and builds without a prompt.
+
+**Release overlay.** [tauri.release.conf.json](../src-tauri/tauri.release.conf.json) turns on `createUpdaterArtifacts`, which signs the updater artifact with the key. Only release and staging builds pass it with `--config`, so `bun run tauri:build --bundles app` and CI's `tauri build --ci --no-bundle` still succeed without a key.
+
+1. Set the same version in [package.json](../package.json), [tauri.conf.json](../src-tauri/tauri.conf.json) and [Cargo.toml](../src-tauri/Cargo.toml), then tag the commit `v<version>`.
+2. On an Apple Silicon Mac, build with the Developer ID identity for public releases:
+
+   ```sh
+   APPLE_SIGNING_IDENTITY=<sha1> TAURI_SIGNING_PRIVATE_KEY=<from the secret store> bun run tauri:build --bundles app,dmg --config src-tauri/tauri.release.conf.json
+   ```
+
+   Notarize and staple the DMG from `src-tauri/target/release/bundle/dmg/` and upload it as `Echo-macos.dmg`. From the same build, upload `src-tauri/target/release/bundle/macos/Echo.app.tar.gz` as `Echo-macos.app.tar.gz` and its `.sig` as `Echo-macos.app.tar.gz.sig`. The app inside the tar.gz is not stapled: the DMG's notarization covers its code hash, and the updater's own download carries no quarantine flag.
+3. On Windows, with the key in the environment, run:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\scripts\build-windows.ps1 -Release
+   ```
+
+   `-Release` builds the NSIS installer only, refuses a missing key or the placeholder pubkey, passes the release overlay and copies the signed installer to `Echo-windows-setup.exe` and `Echo-windows-setup.exe.sig` in `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis`. Upload both. A Windows build regenerates `src-tauri/gen/schemas/windows-schema.json`; a Mac build cannot. Commit that file from the Windows checkout when it changes, and never edit it by hand.
+4. Write `SHA256SUMS.txt` for the DMG, the tar.gz and the setup exe, and upload it:
+
+   ```sh
+   shasum -a 256 Echo-macos.dmg Echo-macos.app.tar.gz Echo-windows-setup.exe > SHA256SUMS.txt
+   ```
+
+5. Once both `.sig` files are on the published release, write the manifest and upload it last:
+
+   ```sh
+   bun scripts/update-manifest.ts --tag v<version>
+   gh release upload v<version> latest.json
+   ```
+
+   The script fetches both `.sig` files from `releases/download/<tag>/` and exits non-zero, writing nothing, when one is missing, when a signature's key id differs from the configured pubkey, when the pubkey is the placeholder or not a minisign public key, or when the tag is not exactly `v` followed by package.json's version. The manifest lists `darwin-aarch64` and `windows-x86_64` with URLs under `releases/download/<tag>/`. For a draft release, download the `.sig` files and pass `--assets <dir>`. A release with no `latest.json` offers nothing to installed copies, so a half-uploaded release is safe.
+
+To replace an asset, upload the new file and its `.sig` with `gh release upload --clobber`, run the manifest script again and re-upload `latest.json` with `--clobber`. To stop offering a release, delete its `latest.json` with `gh release delete-asset v<version> latest.json`.
+
+## Stage an update
+
+[update-staging.ts](../scripts/update-staging.ts) proves the whole update loop on one machine without the update key or GitHub. It builds vN (package.json's version) and vN+1 (the next patch) from the checkout with the release overlay and a throwaway key pair, and serves vN+1's `latest.json` and artifact on `127.0.0.1`. The key pair, both config overlays and copies of the builds stay in one new `echo-update-staging-*` directory under the OS temp dir. The overlays set the version, the staging pubkey, the loopback endpoint and `dangerousInsecureTransportProtocol`; `ECHO_APP_VERSION` makes the sidebar show each build's own version. No tracked file changes. The two release builds take several minutes each.
+
+```sh
+APPLE_SIGNING_IDENTITY=<personal identity sha1> bun scripts/update-staging.ts
+```
+
+On macOS, set `APPLE_SIGNING_IDENTITY` to a personal Developer ID, never the identity for public releases, so the installed copy keeps its OS permissions across the update. Without it the script says so and builds unsigned bundles. The script never installs or starts Echo. It prints the vN app (on Windows, the vN installer) to install by hand, the manifest URL and each request it serves. Ctrl+C stops the server and keeps the directory. To check that a tampered artifact is refused, serve the same directory again with one artifact byte flipped:
+
+```sh
+bun scripts/update-staging.ts --serve <staging directory> --tamper
+```
+
 ## Required checks
 
 Run all six from the repository root before submitting a change:
@@ -159,3 +213,17 @@ Run these on a packaged build on each OS, started from `/Applications` or a simi
 7. macOS: with **Start Echo at login** on, move `Echo.app` to another folder and start it from there. Sign out and in and confirm the login item still starts Echo from the new location.
 8. Windows: uninstall Echo with the NSIS installer while **Start Echo at login** is on. Startup apps no longer lists Echo and the `Echo` value is gone from `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. Record the installer type, because an MSI uninstall is not covered by this check.
 9. Turn both settings off. The icon disappears at once, the OS no longer lists Echo, and on macOS `Echo.plist` is gone. On Windows the `Echo` values under `Run` and `Explorer\StartupApproved\Run` are gone.
+
+### Updates
+
+Run these with [update-staging.ts](../scripts/update-staging.ts) on each OS, quitting any other Echo first. Echo writes `update_check` and `update_install` lines to its log (see [locations](../README.md#locations)).
+
+1. Install the printed vN build: on macOS, move `Echo.app` into `/Applications`; on Windows, run the vN installer. Start it. The sidebar shows an icon button beside `v<N>` named "Update Echo to v<N+1>", and the log shows `update_check outcome=available`.
+2. Turn on **Keep Echo running when the dashboard closes**. The tray menu reads Open Echo, Update Echo, a separator and Quit Echo.
+3. Select the sidebar button. It shows download progress, then installing, and Echo restarts on vN+1 with no button and one Echo process. The server output shows one download request even if you select the button or the tray item again during the download, and the tray item reads "Updating Echo…" and is disabled. On Windows the NSIS installer runs passively, with no input pages.
+4. Repeat with a fresh staging run, choosing **Update Echo** from the tray with the dashboard hidden.
+5. Start a dictation and request the install before it ends. The button says the install waits for the dictation to end, the paste lands, and the install starts at least 10 seconds after the last capture, job or paste.
+6. Serve again with `--tamper` against a vN install and request the install. The button reads "Update failed. Try again", vN keeps running and nothing is installed. Selecting it again starts a new download.
+7. Before the first `latest.json` exists, start a release build of the shipped configuration. The log shows `update_check outcome=none`, not `failed`, which proves HTTPS and the redirect chain reach GitHub.
+
+Record the platform, build provenance and the server output with each run.
