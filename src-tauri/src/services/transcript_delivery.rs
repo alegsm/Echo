@@ -1,13 +1,16 @@
 //! Native clipboard delivery. Clipboard contents never leave this service's platform boundary.
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+use crate::services::runtime::Activity;
 
 static DELIVERY_LOCK: Mutex<()> = Mutex::new(());
 
 // Six completed native jobs plus two explicit copies can wait for clipboard ownership.
 const MAX_PENDING_DELIVERIES: usize = 8;
 static PENDING_DELIVERIES: AtomicUsize = AtomicUsize::new(0);
+static LAST_SETTLED: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// Reserve before spawning a worker so renderer invocations cannot grow an unbounded native queue.
 pub struct DeliveryPermit(());
@@ -23,8 +26,25 @@ pub fn admit() -> Result<DeliveryPermit, DeliveryError> {
 
 impl Drop for DeliveryPermit {
     fn drop(&mut self) {
+        // Recorded before the count falls, so a reader that sees no pending delivery
+        // also sees when the last one settled.
+        *LAST_SETTLED
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Instant::now());
         PENDING_DELIVERIES.fetch_sub(1, Ordering::SeqCst);
     }
+}
+
+/// Running while any delivery or explicit Copy holds a permit.
+pub fn activity() -> Activity {
+    if PENDING_DELIVERIES.load(Ordering::SeqCst) > 0 {
+        return Activity::Running;
+    }
+    Activity::Quiet(
+        *LAST_SETTLED
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
@@ -218,16 +238,27 @@ mod tests {
     }
 
     // Keep: overload is rejected before spawning, and every exit returns its admission slot.
+    // The update gate's activity read shares these process-wide counters, so it is proved
+    // here rather than in a parallel test: running while any permit is held, then quiet
+    // since the last one dropped.
     #[test]
     fn transcript_delivery_bounds_pending_native_work() {
         let mut permits: Vec<_> = (0..MAX_PENDING_DELIVERIES)
             .map(|_| admit().unwrap())
             .collect();
         assert!(matches!(admit(), Err(DeliveryError::ClipboardFailed)));
+        assert_eq!(activity(), Activity::Running);
         permits.pop();
         let replacement = admit().unwrap();
         drop(permits);
+        assert_eq!(activity(), Activity::Running);
+        let before_last_drop = Instant::now();
         drop(replacement);
+        assert!(
+            matches!(activity(), Activity::Quiet(Some(settled)) if settled >= before_last_drop),
+            "{:?}",
+            activity()
+        );
         assert!(admit().is_ok());
     }
 

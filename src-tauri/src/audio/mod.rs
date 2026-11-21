@@ -15,6 +15,7 @@ mod tail_level;
 mod types;
 mod wav;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -44,6 +45,7 @@ pub struct DesktopAudioCapture {
 
 struct CoordinatorInner {
     gate: Arc<CaptureGate>,
+    install_barrier: AtomicBool,
     commands: mpsc::Sender<ActorCommand>,
     worker: Mutex<Option<JoinHandle<()>>>,
     operation_timeout: Duration,
@@ -96,6 +98,7 @@ impl DesktopAudioCapture {
         Ok(Self {
             inner: Arc::new(CoordinatorInner {
                 gate,
+                install_barrier: AtomicBool::new(false),
                 commands,
                 worker: Mutex::new(Some(worker)),
                 operation_timeout,
@@ -115,6 +118,15 @@ impl DesktopAudioCapture {
             .inner
             .gate
             .reserve(owner, intent, self.inner.diagnostics.token())?;
+        // Read after reserving: the update gate sets the barrier before it reads
+        // reservations, so at least one side sees the other.
+        if self.inner.install_barrier.load(Ordering::SeqCst) {
+            self.inner.gate.release(reservation.generation);
+            return Err(CaptureError::new(
+                CaptureErrorCode::UpdateInstalling,
+                "reserve",
+            ));
+        }
         if self
             .inner
             .commands
@@ -125,6 +137,17 @@ impl DesktopAudioCapture {
             return Err(unavailable("reserve"));
         }
         Ok(reservation)
+    }
+
+    /// True while a capture reservation or session exists.
+    pub fn has_reservation(&self) -> bool {
+        self.inner.gate.pending().is_some()
+    }
+
+    /// While set, every new reservation is refused with `UpdateInstalling`.
+    /// Set it before reading `has_reservation`, mirroring the order in `reserve`.
+    pub fn set_install_barrier(&self, closed: bool) {
+        self.inner.install_barrier.store(closed, Ordering::SeqCst);
     }
 
     pub fn begin(

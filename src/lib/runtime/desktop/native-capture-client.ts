@@ -29,7 +29,8 @@ type CaptureErrorCode =
   | 'invalid_reservation'
   | 'session_not_found'
   | 'capture_cancelled'
-  | 'coordinator_unavailable';
+  | 'coordinator_unavailable'
+  | 'update_installing';
 
 type NativeCaptureError = {
   activePurpose: CapturePurpose | null;

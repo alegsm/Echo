@@ -5,3 +5,4 @@ pub mod login_item;
 pub mod runtime;
 pub mod transcript_delivery;
 pub mod transcription_jobs;
+pub mod updater;

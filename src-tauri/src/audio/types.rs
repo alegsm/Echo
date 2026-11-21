@@ -162,6 +162,8 @@ pub enum CaptureErrorCode {
     SessionNotFound,
     CaptureCancelled,
     CoordinatorUnavailable,
+    /// An update install closed capture admission; retry after the restart.
+    UpdateInstalling,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

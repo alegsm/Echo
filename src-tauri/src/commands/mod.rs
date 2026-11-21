@@ -8,4 +8,5 @@ pub mod overlay_position;
 pub mod permissions;
 pub mod storage;
 pub mod stt;
+pub mod update;
 mod window_authorization;

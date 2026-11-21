@@ -69,7 +69,7 @@ impl FakeBackend {
         )
     }
 
-    pub(super) fn blocked() -> (Self, Receiver<()>, Sender<()>, Arc<AtomicUsize>) {
+    pub(crate) fn blocked() -> (Self, Receiver<()>, Sender<()>, Arc<AtomicUsize>) {
         let (started_sender, started_receiver) = mpsc::channel();
         let (release_sender, release_receiver) = mpsc::channel();
         let drops = Arc::new(AtomicUsize::new(0));

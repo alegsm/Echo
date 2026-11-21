@@ -1,7 +1,8 @@
 use crate::storage::PersistedSettings;
 
-use super::{close_action, dashboard_visible_at_start, CloseAction};
+use super::{close_action, dashboard_visible_at_start, tray_entries, CloseAction, TrayEntry};
 use crate::services::runtime::EchoRuntime;
+use crate::services::updater::TrayOffer;
 
 fn runtime_with(revisions: &[(u64, bool)]) -> EchoRuntime {
     let runtime = EchoRuntime::default();
@@ -83,5 +84,41 @@ fn dashboard_is_hidden_at_start_only_for_a_login_launch_with_the_setting_on() {
             expected,
             "{case}"
         );
+    }
+}
+
+// Keep: the tray reads Open Echo, Update Echo, separator, Quit Echo with an update to
+// offer, shows the item disabled while one installs, and omits it with none.
+#[test]
+fn tray_menu_offers_update_echo_only_with_an_update() {
+    let item = |id, text, enabled| TrayEntry::Item { id, text, enabled };
+    let open = || item("tray-open", "Open Echo", true);
+    let quit = || item("tray-quit", "Quit Echo", true);
+    let cases = [
+        (
+            TrayOffer::Hidden,
+            vec![open(), TrayEntry::Separator, quit()],
+        ),
+        (
+            TrayOffer::Enabled,
+            vec![
+                open(),
+                item("tray-update", "Update Echo", true),
+                TrayEntry::Separator,
+                quit(),
+            ],
+        ),
+        (
+            TrayOffer::Disabled,
+            vec![
+                open(),
+                item("tray-update", "Updating Echo…", false),
+                TrayEntry::Separator,
+                quit(),
+            ],
+        ),
+    ];
+    for (offer, expected) in cases {
+        assert_eq!(tray_entries(offer), expected, "{offer:?}");
     }
 }

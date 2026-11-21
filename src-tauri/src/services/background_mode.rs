@@ -1,5 +1,6 @@
 //! Background mode: whether a dashboard close hides or quits, whether the dashboard
-//! shows at launch, and the tray icon that brings it back while it is hidden.
+//! shows at launch, and the tray icon that brings it back while it is hidden and
+//! offers Update Echo when services/updater.rs has a release.
 
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -7,12 +8,14 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager};
 
 use crate::services::runtime::EchoRuntime;
+use crate::services::updater::{self, TrayOffer};
 
 /// Marks a launch started by the OS at login. Login registration must pass this exact
 /// argument; it can only keep the dashboard hidden.
 pub const LAUNCHED_AT_LOGIN_ARG: &str = "--launched-at-login";
 const TRAY_ID: &str = "echo-background";
 const OPEN_MENU_ID: &str = "tray-open";
+const UPDATE_MENU_ID: &str = "tray-update";
 const QUIT_MENU_ID: &str = "tray-quit";
 const DASHBOARD_LABEL: &str = "dashboard";
 
@@ -73,16 +76,63 @@ pub fn apply_run_in_background(app: &AppHandle, on: bool) {
 pub fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
     match event.id().as_ref() {
         OPEN_MENU_ID => show_dashboard(app),
+        UPDATE_MENU_ID => {
+            updater::request_install(app);
+        }
         QUIT_MENU_ID => app.exit(0),
         _ => {}
     }
 }
 
+/// Rebuilds the menu of the existing tray after an update status change. Without a
+/// tray, as when background mode is off, it does nothing.
+pub fn refresh_tray_menu(app: &AppHandle) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return;
+    };
+    if let Err(error) = tray_menu(app).and_then(|menu| tray.set_menu(Some(menu))) {
+        log::warn!("Could not refresh the tray menu: {error}");
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum TrayEntry {
+    Item {
+        id: &'static str,
+        text: &'static str,
+        enabled: bool,
+    },
+    Separator,
+}
+
+fn tray_entries(offer: TrayOffer) -> Vec<TrayEntry> {
+    let item = |id, text, enabled| TrayEntry::Item { id, text, enabled };
+    let mut entries = vec![item(OPEN_MENU_ID, "Open Echo", true)];
+    match offer {
+        TrayOffer::Hidden => {}
+        TrayOffer::Enabled => entries.push(item(UPDATE_MENU_ID, "Update Echo", true)),
+        TrayOffer::Disabled => entries.push(item(UPDATE_MENU_ID, "Updating Echo…", false)),
+    }
+    entries.push(TrayEntry::Separator);
+    entries.push(item(QUIT_MENU_ID, "Quit Echo", true));
+    entries
+}
+
+fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let menu = Menu::new(app)?;
+    for entry in tray_entries(updater::tray_offer(app)) {
+        match entry {
+            TrayEntry::Item { id, text, enabled } => {
+                menu.append(&MenuItem::with_id(app, id, text, enabled, None::<&str>)?)?;
+            }
+            TrayEntry::Separator => menu.append(&PredefinedMenuItem::separator(app)?)?,
+        }
+    }
+    Ok(menu)
+}
+
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, OPEN_MENU_ID, "Open Echo", true, None::<&str>)?;
-    let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, QUIT_MENU_ID, "Quit Echo", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &separator, &quit])?;
+    let menu = tray_menu(app)?;
     let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(tray_image(app))
         .tooltip("Echo")

@@ -40,6 +40,9 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             background_mode::show_dashboard(app)
         }))
+        // Rust-only: no capability grants an `updater:` permission. services/updater.rs
+        // owns every check, download and install.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)

@@ -79,5 +79,17 @@
       "entitlements": "./Entitlements.plist",
       "minimumSystemVersion": "13.3"
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "ECHO_UPDATE_PUBLIC_KEY_NOT_SET",
+      "endpoints": [
+        "https://echostt.app/update/latest.json",
+        "https://github.com/alegsm/Echo/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

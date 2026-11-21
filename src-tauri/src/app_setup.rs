@@ -4,6 +4,7 @@ use crate::services::background_mode::{self, CloseAction};
 use crate::services::login_item;
 use crate::services::runtime::EchoRuntime;
 use crate::services::transcription_jobs::TranscriptionJobs;
+use crate::services::updater;
 use crate::{commands, diagnostics, platform};
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, WindowEvent};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
@@ -16,6 +17,7 @@ struct FnHotkeyEvent {
 
 pub fn setup_application(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let audio_capture = initialize_runtime(app)?;
+    updater::manage(app.handle());
     configure_overlay(app, &audio_capture);
     configure_dashboard(app, &audio_capture);
     #[cfg(target_os = "windows")]
@@ -29,6 +31,7 @@ pub fn setup_application(app: &mut tauri::App) -> Result<(), Box<dyn std::error:
         log::warn!("Could not harden diagnostic log permissions: {error}");
     }
     show_tray_and_dashboard(app);
+    updater::start(app.handle());
     Ok(())
 }
 
@@ -47,7 +50,7 @@ fn show_tray_and_dashboard(app: &tauri::App) {
     login_item::refresh_at_startup(app.handle(), runtime.launch_at_login().unwrap_or(false));
 }
 
-pub fn shutdown_application(app: &AppHandle) {
+pub fn shutdown_application<R: tauri::Runtime>(app: &AppHandle<R>) {
     if let Some(dictations) = app.try_state::<CaptureDictations>() {
         dictations.cancel_all();
     }

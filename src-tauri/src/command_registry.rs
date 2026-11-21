@@ -21,6 +21,8 @@ macro_rules! for_each_echo_command {
             get_persisted_settings => crate::commands::storage::settings::get_persisted_settings,
             update_persisted_settings => crate::commands::storage::settings::update_persisted_settings,
             get_launch_at_login_status => crate::commands::login_item::get_launch_at_login_status,
+            get_update_status => crate::commands::update::get_update_status,
+            install_update => crate::commands::update::install_update,
             list_persisted_history => crate::commands::storage::history::list_persisted_history,
             get_persisted_transcript => crate::commands::storage::history::get_persisted_transcript,
             delete_persisted_transcript => crate::commands::storage::history::delete_persisted_transcript,
@@ -225,6 +227,106 @@ mod tests {
                 < handler.find("is_registered(").unwrap()
         );
         assert!(!handler.contains("require_known_window"));
+    }
+
+    // Keep: only the dashboard may read the update status or request the install, after
+    // native authorization, and no capability grants the updater plugin's own commands.
+    #[test]
+    fn update_commands_are_dashboard_only_and_nothing_grants_updater() {
+        let names = for_each_echo_command!(collect_command_names);
+        let compiled: serde_json::Value =
+            serde_json::from_str(include_str!("../gen/schemas/capabilities.json")).unwrap();
+        for (command, grant) in [
+            ("get_update_status", "allow-get-update-status"),
+            ("install_update", "allow-install-update"),
+        ] {
+            assert!(names.contains(&command), "{command} not registered");
+            for (source, surface, granted) in [
+                (
+                    include_str!("../capabilities/dashboard.json"),
+                    "dashboard",
+                    1,
+                ),
+                (include_str!("../capabilities/overlay.json"), "overlay", 0),
+            ] {
+                let capability: serde_json::Value = serde_json::from_str(source).unwrap();
+                for grants in [
+                    &capability["permissions"],
+                    &compiled[surface]["permissions"],
+                ] {
+                    let count = grants
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter(|p| *p == grant)
+                        .count();
+                    assert_eq!(count, granted, "{surface} {grant}");
+                }
+            }
+            let handler = include_str!("commands/update.rs")
+                .split(&format!("pub fn {command}<"))
+                .nth(1)
+                .unwrap()
+                .split("#[tauri::command]")
+                .next()
+                .unwrap();
+            let authorized = handler.find("require_dashboard(&window)?").unwrap();
+            let acted = handler
+                .find("state::<UpdaterService>")
+                .or_else(|| handler.find("request_install("))
+                .unwrap();
+            assert!(authorized < acted, "{command} acts before authorization");
+        }
+        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities");
+        for entry in std::fs::read_dir(directory).unwrap() {
+            let source = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+            assert!(!source.contains("updater:"), "{source}");
+        }
+        for surface in compiled.as_object().unwrap().values() {
+            assert!(!surface["permissions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|grant| grant
+                    .as_str()
+                    .is_some_and(|name| name.starts_with("updater:"))));
+        }
+    }
+
+    // Keep: the updater adds nothing to the overlay; its grants stay exactly as in 0.4.1.
+    #[test]
+    fn overlay_capability_is_unchanged_by_the_updater() {
+        let overlay: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/overlay.json")).unwrap();
+        assert_eq!(
+            overlay["permissions"],
+            serde_json::json!([
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+                "core:window:allow-set-background-color",
+                "core:window:allow-set-size",
+                "core:window:allow-show",
+                "core:window:allow-start-dragging",
+                "core:webview:allow-set-webview-auto-resize",
+                "global-shortcut:allow-register",
+                "global-shortcut:allow-unregister",
+                "allow-record-diagnostic-event",
+                "allow-copy-transcript",
+                "allow-deliver-transcript",
+                "allow-position-overlay",
+                "allow-set-fn-hotkey-capture-enabled",
+                "allow-start-audio-capture",
+                "allow-stop-audio-capture",
+                "allow-cancel-audio-capture",
+                "allow-get-desktop-runtime-snapshot",
+                "allow-transcribe-audio-artifact",
+                "allow-cancel-transcription-job",
+                "allow-report-transcript-delivery",
+                "allow-get-persisted-settings",
+                "allow-get-persisted-transcript",
+                "allow-probe-diagnostic-log"
+            ])
+        );
     }
 
     // Keep: neither renderer may bypass native field filtering with plugin log strings.

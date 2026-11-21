@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use crate::audio::{CaptureErrorCode, CaptureEvent, CapturePhase};
 use crate::storage::PersistedSettings;
@@ -21,6 +22,14 @@ impl fmt::Display for RuntimeError {
 
 impl std::error::Error for RuntimeError {}
 
+/// Whether work that an update install must wait for is running, and when it last ended.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Activity {
+    Running,
+    /// Nothing is running. Holds when the last work ended, or `None` if none ran.
+    Quiet(Option<Instant>),
+}
+
 struct RuntimeInner {
     sequence: u64,
     native_modifier_available: Option<bool>,
@@ -39,6 +48,7 @@ struct RuntimeInner {
     last_transcript_record_revision: Option<u64>,
     last_transcript_job_sequence: u64,
     capture_job_floor: u64,
+    work_ended_at: Option<Instant>,
 }
 
 #[derive(Clone)]
@@ -67,6 +77,7 @@ impl Default for EchoRuntime {
                 last_transcript_record_revision: None,
                 last_transcript_job_sequence: 0,
                 capture_job_floor: 0,
+                work_ended_at: None,
             })),
         }
     }
@@ -110,6 +121,9 @@ impl EchoRuntime {
                 event.error,
                 Some(CaptureErrorCode::CaptureCancelled | CaptureErrorCode::RecordingTooShort)
             );
+        if inner.capture_phase != CapturePhase::Idle && event.phase == CapturePhase::Idle {
+            inner.work_ended_at = Some(Instant::now());
+        }
         inner.capture_phase = event.phase;
         if event.phase == CapturePhase::Idle && event.outcome != "stop_requested" {
             inner.capture_intent_id = None;
@@ -157,7 +171,7 @@ impl EchoRuntime {
         error: EchoErrorCode,
     ) -> Result<DesktopStateEnvelope, RuntimeError> {
         let mut inner = self.lock()?;
-        inner.active_jobs.remove(&job_sequence);
+        inner.settle_job(job_sequence);
         if inner.owns_settled_outcome(job_sequence) {
             inner.last_error = Some(error);
             inner.settled_state = EchoState::Error;
@@ -194,7 +208,7 @@ impl EchoRuntime {
         warning: Option<EchoErrorCode>,
     ) -> Result<DesktopStateEnvelope, RuntimeError> {
         let mut inner = self.lock()?;
-        inner.active_jobs.remove(&job_sequence);
+        inner.settle_job(job_sequence);
         if job_sequence >= inner.last_transcript_job_sequence
             && job_sequence >= inner.capture_job_floor
             && !inner.superseded_jobs.contains(&job_sequence)
@@ -218,7 +232,7 @@ impl EchoRuntime {
 
     pub fn job_cancelled(&self, job_sequence: u64) -> Result<DesktopStateEnvelope, RuntimeError> {
         let mut inner = self.lock()?;
-        inner.active_jobs.remove(&job_sequence);
+        inner.settle_job(job_sequence);
         if inner.owns_settled_outcome(job_sequence) {
             inner.settled_state = EchoState::Idle;
             inner.last_error = None;
@@ -299,6 +313,16 @@ impl EchoRuntime {
         Ok(self.lock()?.settings.launch_at_login)
     }
 
+    /// Capture phases other than Idle and active jobs are running work; the time is
+    /// recorded natively when a capture returns to Idle and when a job settles.
+    pub fn activity(&self) -> Result<Activity, RuntimeError> {
+        let inner = self.lock()?;
+        if inner.capture_phase != CapturePhase::Idle || !inner.active_jobs.is_empty() {
+            return Ok(Activity::Running);
+        }
+        Ok(Activity::Quiet(inner.work_ended_at))
+    }
+
     /// Poisons the state lock so tests can prove callers degrade safely when it is unavailable.
     #[cfg(test)]
     pub(crate) fn poison_lock(&self) {
@@ -316,6 +340,12 @@ impl EchoRuntime {
 }
 
 impl RuntimeInner {
+    fn settle_job(&mut self, job_sequence: u64) {
+        if self.active_jobs.remove(&job_sequence) {
+            self.work_ended_at = Some(Instant::now());
+        }
+    }
+
     fn claim_capture(&mut self, intent_id: &str) {
         if self.newest_capture_intent_id.as_deref() != Some(intent_id) {
             self.capture_job_floor = self.newest_started_job_sequence.saturating_add(1);
