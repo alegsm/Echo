@@ -116,7 +116,13 @@ test('sidebar update button walks available, downloading, waiting, installing an
     expect(nav.installs()).toHaveLength(2);
     expect(nav.button()!.getAttribute('aria-label')).toBe('Downloading Echo v0.5.1, 0%');
 
-    nav.emit({ sequence: 9, status: { state: 'none' } });
+    // Whole percents rounded down, so the label never reads 100% before the download completes.
+    nav.emit({ sequence: 9, status: { state: 'downloading', version: '0.5.1', downloadedBytes: 1, totalBytes: 3 } });
+    expect(nav.button()!.getAttribute('aria-label')).toBe('Downloading Echo v0.5.1, 33%');
+    nav.emit({ sequence: 10, status: { state: 'downloading', version: '0.5.1', downloadedBytes: 999, totalBytes: 1000 } });
+    expect(nav.button()!.getAttribute('aria-label')).toBe('Downloading Echo v0.5.1, 99%');
+
+    nav.emit({ sequence: 11, status: { state: 'none' } });
     expect(nav.button()).toBeNull();
     expect(nav.version().classList.contains('has-update')).toBe(false);
 
