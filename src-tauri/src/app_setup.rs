@@ -36,6 +36,7 @@ pub fn setup_application(app: &mut tauri::App) -> Result<(), Box<dyn std::error:
 }
 
 // tauri.conf.json creates the dashboard hidden, so a login launch never flashes it.
+// The tray is applied first because a hidden start leaves the Dock only with a tray.
 fn show_tray_and_dashboard(app: &tauri::App) {
     let runtime = app.state::<EchoRuntime>();
     background_mode::apply_run_in_background(
@@ -46,6 +47,11 @@ fn show_tray_and_dashboard(app: &tauri::App) {
         std::env::args().any(|argument| argument == background_mode::LAUNCHED_AT_LOGIN_ARG);
     if background_mode::dashboard_visible_at_start(launched_at_login, &runtime) {
         background_mode::show_dashboard(app.handle());
+    } else {
+        background_mode::apply_dock_visibility(
+            app.handle(),
+            background_mode::dock_icon_visible(false, background_mode::tray_present(app.handle())),
+        );
     }
     login_item::refresh_at_startup(app.handle(), runtime.launch_at_login().unwrap_or(false));
 }
@@ -170,6 +176,13 @@ fn configure_dashboard(app: &tauri::App, audio_capture: &DesktopAudioCapture) {
             if let Err(error) = window.hide() {
                 log::warn!("Could not hide the dashboard: {error}");
             }
+            background_mode::apply_dock_visibility(
+                &app_handle,
+                background_mode::dock_icon_visible(
+                    false,
+                    background_mode::tray_present(&app_handle),
+                ),
+            );
             return;
         }
         let _ = capture.cleanup_owner(TrustedCaptureOwner::from_window_label("dashboard"));

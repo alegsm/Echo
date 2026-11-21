@@ -1,6 +1,7 @@
 //! Background mode: whether a dashboard close hides or quits, whether the dashboard
-//! shows at launch, and the tray icon that brings it back while it is hidden and
-//! offers Update Echo when services/updater.rs has a release.
+//! shows at launch, whether Echo shows in the macOS Dock, and the tray icon that brings
+//! the dashboard back while it is hidden and offers Update Echo when
+//! services/updater.rs has a release.
 
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -38,12 +39,44 @@ pub fn dashboard_visible_at_start(launched_at_login: bool, runtime: &EchoRuntime
     !(launched_at_login && runtime.run_in_background().unwrap_or(false))
 }
 
+/// Echo shows in the macOS Dock while the dashboard is visible. A hidden dashboard
+/// keeps the Dock icon when there is no menu bar icon, because the Dock click is then
+/// one of the few ways back.
+pub fn dock_icon_visible(dashboard_visible: bool, tray_present: bool) -> bool {
+    dashboard_visible || !tray_present
+}
+
+pub fn tray_present(app: &AppHandle) -> bool {
+    app.tray_by_id(TRAY_ID).is_some()
+}
+
+/// Switches the macOS activation policy: Regular shows the Dock icon and the app menu,
+/// Accessory hides both and keeps Echo out of Cmd+Tab. A failure is logged and the
+/// caller carries on, so the dashboard still shows or hides.
+#[cfg(target_os = "macos")]
+pub fn apply_dock_visibility(app: &AppHandle, visible: bool) {
+    use tauri::ActivationPolicy;
+    let policy = if visible {
+        ActivationPolicy::Regular
+    } else {
+        ActivationPolicy::Accessory
+    };
+    if let Err(error) = app.set_activation_policy(policy) {
+        log::warn!("Could not set the Dock icon visible to {visible}: {error}");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn apply_dock_visibility(_app: &AppHandle, _visible: bool) {}
+
 /// The one way Echo brings the dashboard back: tray Open Echo, a Windows left-click,
-/// a macOS Dock click, a second launch and a normal start all use it.
+/// a macOS Dock click, a second launch and a normal start all use it. On macOS it
+/// returns Echo to the Dock before showing the window, so the dashboard can take focus.
 pub fn show_dashboard(app: &AppHandle) {
     let Some(dashboard) = app.get_webview_window(DASHBOARD_LABEL) else {
         return;
     };
+    apply_dock_visibility(app, true);
     let shown = dashboard
         .show()
         .and_then(|()| dashboard.unminimize())
