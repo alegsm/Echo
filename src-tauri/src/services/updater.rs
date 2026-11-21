@@ -266,7 +266,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) {
         return;
     }
     let service = app.state::<UpdaterService>().inner().clone();
-    let source = PluginSource { app: app.clone() };
+    let source = PluginSource::new(app.clone());
     let spawned = std::thread::Builder::new()
         .name("echo-update-schedule".to_owned())
         .spawn(move || {
@@ -293,7 +293,7 @@ pub fn request_install<R: Runtime>(app: &AppHandle<R>) -> UpdateEnvelope {
         return service.status();
     };
     let admitted = service.status();
-    let source = PluginSource { app: app.clone() };
+    let source = PluginSource::new(app.clone());
     let gate = IdleGate {
         capture: app.state::<DesktopAudioCapture>().inner().clone(),
         runtime: app.state::<EchoRuntime>().inner().clone(),
@@ -473,16 +473,25 @@ impl InstallGate for IdleGate {
 
 struct PluginSource<R: Runtime> {
     app: AppHandle<R>,
+    /// The limit on a whole check request. Tests shorten it to exercise a server that stalls.
+    check_timeout: Duration,
 }
 
 impl<R: Runtime> PluginSource<R> {
+    fn new(app: AppHandle<R>) -> Self {
+        Self {
+            app,
+            check_timeout: CHECK_TIMEOUT,
+        }
+    }
+
     fn updater(&self) -> tauri_plugin_updater::Result<Updater> {
         let https_only = !self.insecure_transport_configured();
         let app = self.app.clone();
         self.app
             .updater_builder()
             .no_proxy()
-            .timeout(CHECK_TIMEOUT)
+            .timeout(self.check_timeout)
             .configure_client(move |client| {
                 client
                     .https_only(https_only)

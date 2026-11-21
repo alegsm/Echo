@@ -3,12 +3,13 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PUBKEY_PLACEHOLDER, publicKeyId } from '../scripts/update-manifest.ts';
 
 // Release pins and the update-manifest.ts command line. The no-`updater:`-grant and
 // overlay-capability pins live once, in src-tauri/src/command_registry.rs.
 
-const root = new URL('../', import.meta.url).pathname;
+const root = fileURLToPath(new URL('../', import.meta.url));
 const readJson = async (path: string) => JSON.parse(await readFile(join(root, path), 'utf8'));
 const shippedConfigs = ['src-tauri/tauri.conf.json', 'src-tauri/tauri.release.conf.json'];
 const version: string = (await readJson('package.json')).version;

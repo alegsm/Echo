@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -884,10 +884,7 @@ fn plugin_app(endpoints: &[String], pubkey: &str, insecure: bool) -> tauri::App<
 
 fn plugin_check(endpoints: &[String], insecure: bool) -> CheckOutcome<Update> {
     let app = plugin_app(endpoints, TRUSTED_KEY, insecure);
-    PluginSource {
-        app: app.handle().clone(),
-    }
-    .check()
+    PluginSource::new(app.handle().clone()).check()
 }
 
 fn offered_version(outcome: &CheckOutcome<Update>) -> Option<&str> {
@@ -951,11 +948,10 @@ fn only_a_higher_stable_release_is_offered() {
     }
 }
 
-// Keep: malformed JSON, a sixth redirect, an http:// hop under the shipped config and a
-// refused connection fail the check, and a failed check keeps an existing offer.
-#[test]
-fn check_failures_keep_the_status_and_redirects_stop_after_five() {
-    let server = Loopback::start(|base, path| {
+/// Serves `/redirect/<n>` (n more redirects, then a 0.5.1 offer) and `/malformed`; every
+/// other path is 404.
+fn release_server() -> Loopback {
+    Loopback::start(|base, path| {
         if let Some(hops) = path.strip_prefix("/redirect/") {
             let hops: u32 = hops.parse().unwrap();
             return match hops {
@@ -967,53 +963,150 @@ fn check_failures_keep_the_status_and_redirects_stop_after_five() {
             "/malformed" => Reply::body("{\"version\": "),
             _ => Reply::status(404),
         }
+    })
+}
+
+/// An https:// endpoint whose server answers each TLS ClientHello with a fatal
+/// handshake_failure alert, so the TCP connection succeeds and the TLS handshake fails.
+/// The counter records the ClientHellos it received.
+fn tls_refusing_endpoint() -> (String, Arc<AtomicUsize>) {
+    const HANDSHAKE_RECORD: u8 = 22;
+    // Content type alert (21), TLS 1.2, length 2, level fatal (2), handshake_failure (40).
+    const FATAL_HANDSHAKE_FAILURE: [u8; 7] = [21, 3, 3, 0, 2, 2, 40];
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind a loopback listener");
+    let endpoint = format!("https://{}/latest.json", listener.local_addr().unwrap());
+    let hellos = Arc::new(AtomicUsize::new(0));
+    let received = Arc::clone(&hellos);
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut header = [0u8; 5];
+            if stream.read_exact(&mut header).is_err() || header[0] != HANDSHAKE_RECORD {
+                continue;
+            }
+            // Read the whole record first: closing with unread bytes resets the connection
+            // before the client reads the alert.
+            let mut hello = vec![0u8; usize::from(u16::from_be_bytes([header[3], header[4]]))];
+            if stream.read_exact(&mut hello).is_err() {
+                continue;
+            }
+            received.fetch_add(1, Ordering::SeqCst);
+            let _ = stream.write_all(&FATAL_HANDSHAKE_FAILURE);
+            let _ = stream.shutdown(std::net::Shutdown::Write);
+            let _ = stream.read_to_end(&mut Vec::new());
+        }
     });
-    assert_eq!(
-        offered_version(&plugin_check(&[server.url("/redirect/5")], true)),
-        Some("0.5.1")
-    );
+    (endpoint, hellos)
+}
+
+/// The check timeout the failure cases use, so a timeout costs this instead of 30 s.
+const SHORT_CHECK_TIMEOUT: Duration = Duration::from_millis(250);
+
+struct FailingCheck {
+    case: &'static str,
+    endpoint: String,
+    insecure: bool,
+}
+
+/// One check failure of each kind a check must survive without changing the status.
+/// `release` is a [`release_server`]. The timeout case is a server that offers 0.5.1 only
+/// after 3 s, so a check that ignored its timeout would read the offer instead of failing.
+fn failing_checks(release: &Loopback) -> (Vec<FailingCheck>, Arc<AtomicUsize>) {
+    let slow = Loopback::start(|base, _| {
+        std::thread::sleep(Duration::from_secs(3));
+        Reply::body(manifest("0.5.1", &format!("{base}/artifact")))
+    });
+    let (tls_endpoint, tls_hellos) = tls_refusing_endpoint();
     let closed_port = {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         format!("http://{}/latest.json", listener.local_addr().unwrap())
     };
-    for (case, endpoint, insecure) in [
-        ("malformed JSON", server.url("/malformed"), true),
-        ("six redirects", server.url("/redirect/6"), true),
-        ("connection refused", closed_port, true),
-        (
+    let case = |case, endpoint, insecure| FailingCheck {
+        case,
+        endpoint,
+        insecure,
+    };
+    let cases = vec![
+        case("timeout", slow.url("/latest.json"), true),
+        case("TLS handshake failure", tls_endpoint, false),
+        case("malformed JSON", release.url("/malformed"), true),
+        case("six redirects", release.url("/redirect/6"), true),
+        case(
             "http under the shipped config",
-            server.url("/redirect/0"),
+            release.url("/redirect/0"),
             false,
         ),
-    ] {
-        let requests_before = server.requests().len();
-        let outcome = plugin_check(std::slice::from_ref(&endpoint), insecure);
-        assert!(matches!(outcome, CheckOutcome::Failed(_)), "{case}");
-        if !insecure {
-            assert_eq!(
-                server.requests().len(),
-                requests_before,
-                "{case} sent a request"
-            );
+        case("connection refused", closed_port, true),
+    ];
+    (cases, tls_hellos)
+}
+
+/// The real plugin source for `failing`, with the short check timeout.
+fn failing_source(failing: &FailingCheck) -> (tauri::App<MockRuntime>, PluginSource<MockRuntime>) {
+    let app = plugin_app(
+        std::slice::from_ref(&failing.endpoint),
+        TRUSTED_KEY,
+        failing.insecure,
+    );
+    let source = PluginSource {
+        check_timeout: SHORT_CHECK_TIMEOUT,
+        ..PluginSource::new(app.handle().clone())
+    };
+    (app, source)
+}
+
+// Keep: a timeout, a TLS handshake failure, malformed JSON, a sixth redirect, an http:// hop
+// under the shipped config and a refused connection each fail the check through the real
+// plugin and leave the envelope unchanged, so nothing is published: none stays none, and an
+// existing offer stays available with its version. Five redirects still reach the manifest.
+#[test]
+fn check_failures_keep_the_status_and_redirects_stop_after_five() {
+    let release = release_server();
+    assert_eq!(
+        offered_version(&plugin_check(&[release.url("/redirect/5")], true)),
+        Some("0.5.1")
+    );
+    let offering = plugin_app(&[release.url("/redirect/0")], TRUSTED_KEY, true);
+    let (cases, tls_hellos) = failing_checks(&release);
+    for failing in &cases {
+        for offered in [false, true] {
+            let (service, _) = service::<Update>();
+            if offered {
+                check_once(&service, &PluginSource::new(offering.handle().clone()));
+                assert_eq!(service.status().status, available("0.5.1"));
+            }
+            let before = service.status();
+            let requests_before = release.requests().len();
+
+            let (_app, source) = failing_source(failing);
+            check_once(&service, &source);
+
+            let case = failing.case;
+            assert_eq!(service.status(), before, "{case}, offered: {offered}");
+            if case == "http under the shipped config" {
+                assert_eq!(
+                    release.requests().len(),
+                    requests_before,
+                    "{case} sent a request"
+                );
+            }
         }
     }
-
-    let app = plugin_app(&[server.url("/redirect/0")], TRUSTED_KEY, true);
-    let (service, _) = service::<Update>();
-    let source = PluginSource {
-        app: app.handle().clone(),
-    };
-    check_once(&service, &source);
-    assert_eq!(service.status().status, available("0.5.1"));
-    let failing = plugin_app(&[server.url("/malformed")], TRUSTED_KEY, true);
-    check_once(
-        &service,
-        &PluginSource {
-            app: failing.handle().clone(),
-        },
+    assert_eq!(
+        tls_hellos.load(Ordering::SeqCst),
+        2,
+        "TLS handshakes attempted"
     );
-    assert_eq!(service.status().status, available("0.5.1"));
-    assert_eq!(service.status().sequence, 1);
+}
+
+// Keep: a shipped check gives up after 30 s; the failure cases above shorten it.
+#[test]
+fn shipped_checks_time_out_after_30_seconds() {
+    let app = plugin_app(&[], TRUSTED_KEY, false);
+    assert_eq!(
+        PluginSource::new(app.handle().clone()).check_timeout,
+        Duration::from_secs(30)
+    );
 }
 
 /// Delegates to the real plugin but never installs, so a test cannot replace anything.
@@ -1061,9 +1154,7 @@ fn tampered_or_foreign_artifacts_fail_without_installing() {
     });
     let check = |path: &str, key: &str| {
         let app = plugin_app(&[server.url(path)], key, true);
-        let source = PluginSource {
-            app: app.handle().clone(),
-        };
+        let source = PluginSource::new(app.handle().clone());
         let CheckOutcome::Available { pending, .. } = source.check() else {
             panic!("{path} offers 0.5.1");
         };
@@ -1094,9 +1185,7 @@ fn tampered_or_foreign_artifacts_fail_without_installing() {
     // An http:// artifact under the shipped config: restore_update makes no request, so the
     // offer exists without a TLS loopback, and the download must refuse the hop.
     let shipped = plugin_app(&[server.url("/latest.json")], TRUSTED_KEY, false);
-    let source = PluginSource {
-        app: shipped.handle().clone(),
-    };
+    let source = PluginSource::new(shipped.handle().clone());
     let offer = serde_json::from_slice(&manifest("0.5.1", &server.url("/artifact"))).unwrap();
     let update = source
         .updater()
@@ -1169,28 +1258,27 @@ fn checks_log_none_for_missing_manifests_and_failed_for_errors() {
     log::set_logger(&RECORDS).unwrap();
     log::set_max_level(log::LevelFilter::Info);
 
-    let server = Loopback::start(|_, path| match path {
-        "/malformed" => Reply::body("not json"),
-        _ => Reply::status(404),
-    });
-    for path in ["/latest.json", "/malformed"] {
-        let app = plugin_app(&[server.url(path)], TRUSTED_KEY, true);
-        let (service, _) = service::<Update>();
-        check_once(
-            &service,
-            &PluginSource {
-                app: app.handle().clone(),
-            },
-        );
+    let release = release_server();
+    let missing = plugin_app(&[release.url("/latest.json")], TRUSTED_KEY, true);
+    check_once(
+        &service::<Update>().0,
+        &PluginSource::new(missing.handle().clone()),
+    );
+    let (cases, _) = failing_checks(&release);
+    for failing in &cases {
+        let (_app, source) = failing_source(failing);
+        check_once(&service::<Update>().0, &source);
     }
     let records = RECORDS.0.lock().unwrap().clone();
-    assert_eq!(records.len(), 2, "{records:?}");
+    assert_eq!(records.len(), 1 + cases.len(), "{records:?}");
     assert_eq!(records[0], "update_check outcome=none");
-    assert!(
-        records[1].starts_with("update_check outcome=failed error="),
-        "{}",
-        records[1]
-    );
+    for (failing, record) in cases.iter().zip(&records[1..]) {
+        assert!(
+            record.starts_with("update_check outcome=failed error="),
+            "{}: {record}",
+            failing.case
+        );
+    }
 }
 
 // Keep: the native half of the loop across layers. A dashboard reads none over real IPC, a
@@ -1258,9 +1346,7 @@ fn update_loop_walks_from_offer_to_install_over_loopback() {
     println!("e2e: overlay get_update_status denied by the capability layer");
 
     let source = NeverInstalls {
-        inner: PluginSource {
-            app: app.handle().clone(),
-        },
+        inner: PluginSource::new(app.handle().clone()),
         installs: AtomicUsize::new(0),
     };
     check_once(&service, &source);
