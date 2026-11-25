@@ -23,7 +23,7 @@ serde_json = "1.0.154"
 cpal = "0.18.2"
 keyring = { version = "3.6.3", features = ["apple-native", "windows-native"] }
 reqwest = { version = "0.12", default-features = false, features = ["multipart", "rustls-tls"] }
-rusqlite = { version = "0.41", features = ["bundled", "fallible_uint"] }
+rusqlite = { version = "0.43", features = ["bundled", "fallible_uint"] }
 thiserror = "2.0.21"
 uuid = { version = "1.29.0", features = ["v4"] }
 tauri-plugin-clipboard-manager = "2.5.0"
