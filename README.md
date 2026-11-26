@@ -1,10 +1,10 @@
 # Echo
 
-Echo is an [MIT-licensed](LICENSE) desktop dictation app for macOS and Windows. Speak into a focused text field, then review the transcript in History. Echo uses your API key to send recorded audio to your selected transcription provider.
+Echo is an [MIT-licensed](LICENSE) desktop dictation app for macOS and Windows, with source builds for Linux. Speak into a focused text field, then review the transcript in History. Echo uses your API key to send recorded audio to your selected transcription provider.
 
 ![An illustration of a dictation: Echo's overlay listens, shows the words as a live preview, then the sentence is pasted into the focused app.](docs/images/dictation.gif)
 
-Hold Fn on macOS or Control+Windows on Windows to record. Release to finish. For hands-free recording, tap once to start, then tap again to finish. Settings also offers a configurable shortcut.
+Hold Fn on macOS, Control+Windows on Windows or Control+Super on Linux to record. Release to finish. For hands-free recording, tap once to start, then tap again to finish. Settings also offers a configurable shortcut.
 
 ![Echo's History page: copy the latest transcript, keep history for 90 days, scroll, then delete one transcript after confirming.](docs/images/dashboard.gif)
 
@@ -15,7 +15,9 @@ The first animation is an illustration from [echostt.app](https://echostt.app). 
 - **macOS:** download [Echo-macos.dmg](https://github.com/alegsm/Echo/releases/latest/download/Echo-macos.dmg) from the [latest release](https://github.com/alegsm/Echo/releases/latest), open it and drag Echo to Applications. It runs on Apple Silicon Macs with macOS 13.3 or later, and it is signed with a Developer ID certificate and notarized by Apple. [SHA256SUMS.txt](https://github.com/alegsm/Echo/releases/latest/download/SHA256SUMS.txt) lists the SHA-256 of each release file. To build Echo yourself, use the [macOS source-build recipe](docs/development.md#macos-source-build).
 - **Windows:** download [Echo-windows-setup.exe](https://github.com/alegsm/Echo/releases/latest/download/Echo-windows-setup.exe) from the [latest release](https://github.com/alegsm/Echo/releases/latest) and run it. It runs on Windows 10 or 11 on x64. The installer is not Authenticode-signed, so Windows SmartScreen may show "Windows protected your PC". If it does, select **More info**, then **Run anyway**. To build Echo yourself, use the [Windows source-build recipe](docs/development.md#windows-source-build).
 
-Both source-build recipes include prerequisites, pinned toolchains and commands. Packaged microphone, shortcut and paste behavior still needs [physical acceptance](docs/development.md#physical-acceptance).
+- **Linux:** there is no prebuilt release yet. Build Echo with the [Linux source-build recipe](docs/development.md#linux-source-build), which makes a `.deb`, `.rpm` or AppImage for x86_64. X11 sessions get every feature. Wayland sessions need extra setup, as described in [Linux sessions](#linux-sessions).
+
+All three source-build recipes include prerequisites, pinned toolchains and commands. Packaged microphone, shortcut and paste behavior still needs [physical acceptance](docs/development.md#physical-acceptance).
 
 Runtime requirements: macOS 13.3 or later, which ships WebKit 16.4, or Windows WebView2 evergreen. The packaged Mac app declares macOS 13.3 as its minimum, so an older macOS refuses to open it.
 
@@ -41,6 +43,15 @@ When a newer release of Echo is published, a download icon button appears beside
 
 - **macOS:** the button is named "Update Echo to v<version>", and while background mode is on the icon's menu adds **Update Echo**. Either one downloads the release, verifies its signature, waits until no dictation is running, installs it and restarts Echo. The button shows download progress and says when the install waits for a dictation to end; after a failure it reads "Update failed. Try again", and selecting it tries again. Nothing installs until you ask.
 - **Windows:** the button is named "Download Echo v<version>", and while background mode is on the icon's menu adds **Download Echo Update**. Either one opens the [Echo releases page](https://github.com/alegsm/Echo/releases/latest) on GitHub in your browser, where you download and run the installer. Until its Windows builds are code-signed, Echo downloads and installs nothing itself on Windows. If the browser cannot be opened, the button's name and tooltip change to "Could not open your browser. Download Echo v<version> from github.com/alegsm/Echo/releases", which screen readers also announce.
+
+### Linux sessions
+
+Linux has no per-app consent for the microphone, global shortcuts or paste, so Settings > Permissions lists nothing there. Provider keys are saved in the system keyring through the Secret Service API (GNOME Keyring, KWallet or KeePassXC), which must be running and unlocked.
+
+- **X11:** Echo watches Control+Super through XInput2 and pastes with an XTest Control+V. In terminals it sends Control+Shift+V. Nothing else is needed.
+- **Wayland:** compositors hide global key state from apps and block synthetic input. To use Control+Super, add your user to the `input` group and sign in again so Echo can read `/dev/input` (read-only; it never grabs keys). That group lets every program you run read every keystroke, passwords included, not only Echo; leave it out if that trade-off is not acceptable and use the fallback shortcut. Otherwise Echo falls back to the fallback shortcut, which most Wayland compositors deliver only while an Echo window is focused. For automatic paste, install `wtype` (wlroots compositors such as Sway or Hyprland, and KDE) or `ydotool` 1.0 or newer with its daemon running (any compositor, including GNOME). Without either, the transcript is still copied, so paste it with Control+V. Wayland paste always sends Control+V, so in a terminal paste the transcript yourself with Control+Shift+V. On Wayland, Echo's own windows run through XWayland so the overlay can keep its position above other windows; set `GDK_BACKEND=wayland` to opt out.
+
+On either session Echo does not consume Control+Super, so the focused app sees those keys too. Background mode needs a tray that supports app indicators; on GNOME that means the AppIndicator extension. Linux builds do not check for updates; to update, build and install a newer version.
 
 ### History
 
@@ -76,11 +87,11 @@ Echo reads saved keys from the OS credential store when you explicitly find or c
 
 ### Locations
 
-| Data | macOS | Windows |
-| --- | --- | --- |
-| Database | `~/Library/Application Support/app.echostt.desktop/echo.sqlite3` | `%LOCALAPPDATA%\app.echostt.desktop\echo.sqlite3` |
-| Logs | `~/Library/Logs/app.echostt.desktop/` | `%LOCALAPPDATA%\app.echostt.desktop\logs\` |
-| Start Echo at login | `~/Library/LaunchAgents/Echo.plist` | `Echo` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` |
+| Data | macOS | Windows | Linux |
+| --- | --- | --- | --- |
+| Database | `~/Library/Application Support/app.echostt.desktop/echo.sqlite3` | `%LOCALAPPDATA%\app.echostt.desktop\echo.sqlite3` | `~/.local/share/app.echostt.desktop/echo.sqlite3` |
+| Logs | `~/Library/Logs/app.echostt.desktop/` | `%LOCALAPPDATA%\app.echostt.desktop\logs\` | `~/.local/share/app.echostt.desktop/logs/` |
+| Start Echo at login | `~/Library/LaunchAgents/Echo.plist` | `Echo` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | `~/.config/autostart/Echo.desktop` |
 
 The log directory contains `Echo.log`, `Echo.1.log` and `Echo.2.log`. Each is bounded to 1 MiB by [the native log writer](src-tauri/src/bounded_log.rs).
 

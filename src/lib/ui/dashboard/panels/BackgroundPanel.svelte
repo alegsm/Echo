@@ -9,9 +9,10 @@
 
   const ctx = getDashboardContext();
   const initialState = $state<BackgroundState>({ saving: false, loginError: null, registered: null });
-  const keepRunningHelp = $derived(desktopPlatform(ctx.permissions()) === 'windows'
-    ? 'Echo stays in the notification area. Quit from its icon.'
-    : 'Echo stays in the menu bar. Quit from there or with Cmd+Q.');
+  const keepRunningHelp = $derived({
+    windows: 'Echo stays in the notification area. Quit from its icon.',
+    linux: 'Echo stays in the system tray. Quit from its icon.'
+  }[desktopPlatform(ctx.permissions())] ?? 'Echo stays in the menu bar. Quit from there or with Cmd+Q.');
   const { state: viewState, toggle, mismatch, mount } = createBackgroundController(ctx, initialState,
     isTauri() ? createLoginItemClient({ invoke }) : undefined);
   const mismatchLine = $derived(mismatch());

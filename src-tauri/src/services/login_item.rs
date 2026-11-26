@@ -75,9 +75,19 @@ fn launcher<R: Runtime>(app: &AppHandle<R>, for_enable: bool) -> Result<AutoLaun
     launcher_for(
         &app.package_info().name,
         &app.config().identifier,
-        &current_exe()?,
+        &login_exe(current_exe()?, std::env::var_os("APPIMAGE")),
         for_enable,
     )
+}
+
+/// An AppImage runs from a temporary mount that disappears when Echo quits, so the
+/// login record must point at the AppImage file itself, which its runtime names in
+/// `APPIMAGE`.
+fn login_exe(exe: PathBuf, appimage: Option<std::ffi::OsString>) -> PathBuf {
+    match appimage {
+        Some(appimage) if cfg!(target_os = "linux") && !appimage.is_empty() => appimage.into(),
+        _ => exe,
+    }
 }
 
 /// The launcher configuration for one executable path. Only enabling writes the path,

@@ -75,7 +75,7 @@ pub struct PersistedSettings {
 impl Default for PersistedSettings {
     fn default() -> Self {
         Self {
-            push_to_talk_shortcut: if cfg!(target_os = "windows") {
+            push_to_talk_shortcut: if cfg!(any(target_os = "windows", target_os = "linux")) {
                 "Control+Windows"
             } else {
                 "Fn"

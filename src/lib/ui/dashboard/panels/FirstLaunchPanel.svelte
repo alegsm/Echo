@@ -15,8 +15,10 @@
   let { initialState = {} }: { initialState?: FirstLaunchInitialState } = $props();
   const initial = untrack(() => initialState);
   const ctx = getDashboardContext();
-  let permissionIntro = $derived(desktopPlatform(ctx.permissions()) === 'windows'
-    ? 'Give Echo access to your microphone.' : 'Give Echo access to your microphone and recording shortcut.');
+  let permissionIntro = $derived({
+    windows: 'Give Echo access to your microphone.',
+    linux: 'Linux shows no permission prompts. On Wayland, Control+Super needs your user in the input group.'
+  }[desktopPlatform(ctx.permissions())] ?? 'Give Echo access to your microphone and recording shortcut.');
   const viewState = $state({ step: initial.step ?? 1 });
   const { setStep, finishSetup } = createSetupController(ctx, viewState, {
     tick, focusHeading: () => document.querySelector<HTMLElement>('.first-launch h1')?.focus()
@@ -36,7 +38,7 @@
   </ol>
   {#if viewState.step === 1}
     <PermissionsPanel />
-    <p class="hint">You can continue now and grant permissions later in Settings.</p>
+    {#if desktopPlatform(ctx.permissions()) !== 'linux'}<p class="hint">You can continue now and grant permissions later in Settings.</p>{/if}
     <footer><button type="button" onclick={() => ctx.setActiveTab('history')}>Browse Echo</button><button type="button" class="primary" onclick={() => setStep(2)}>Continue</button></footer>
   {:else}
     <ProviderPanel />

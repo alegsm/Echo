@@ -24,12 +24,12 @@ const windowsPermissions = {
   accessibility: { granted: false, status: 'not_required', message: 'Not required on this platform.' },
   input_monitoring: { granted: false, status: 'not_required', message: 'Not required on this platform.' }
 } satisfies DesktopPermissions;
-let renderKeybinds: (available?: boolean | null) => string;
+let renderKeybinds: (available?: boolean | null, permissions?: DesktopPermissions) => string;
 beforeAll(async () => {
   const fixture = await compileRenderer(new URL('./helpers/DashboardFixture.svelte', import.meta.url));
-  renderKeybinds = (available) => fixture({ component: 'keybinds',
+  renderKeybinds = (available, permissions = windowsPermissions) => fixture({ component: 'keybinds',
     initialState: { settings: { pushToTalkShortcut: 'Control+Windows', fallbackShortcut: 'CommandOrControl+Shift+Space' },
-      permissions: windowsPermissions },
+      permissions },
     snapshot: { nativeModifierAvailable: available }
   });
   render = (settings = {}, presence = {}, permissions, state = permissions ? 'ready' : 'checking') => fixture({
@@ -933,4 +933,14 @@ test('a status read resolving after the card unmounts changes nothing', async ()
     expect(h.lines()).toEqual(helpLines);
     expect(h.commands).toEqual([STATUS, STATUS]);
   } finally { await h.harness.cleanup(); }
+});
+
+test('an unavailable Linux chord names the input group, and Windows does not', () => {
+  const linux = { ...windowsPermissions, platform: 'linux',
+    microphone: { granted: true, status: 'not_required', message: 'Not required on this platform.' } } satisfies DesktopPermissions;
+  const degraded = renderKeybinds(false, linux).replace(/<!--.*?-->/g, '');
+  expect(degraded).toContain('Native shortcut unavailable. On Wayland, add your user to the input group and sign in again.');
+  expect(degraded).toContain('Fallback: Ctrl+Shift+Space.');
+  expect(renderKeybinds(true, linux)).not.toContain('input group');
+  expect(renderKeybinds(false)).not.toContain('input group');
 });

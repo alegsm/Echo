@@ -58,7 +58,8 @@ const WINDOWS_DEFAULT_PUSH_TO_TALK_SHORTCUT = 'Control+Windows';
 function defaultPushToTalkShortcut() {
   const platform = typeof navigator !== 'undefined' ? navigator.platform.toLowerCase() : '';
   const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent.toLowerCase() : '';
-  return platform.includes('win') || userAgent.includes('windows')
+  // Linux has no readable Fn key; its native chord is Control+Super, stored under the Windows name.
+  return platform.includes('win') || userAgent.includes('windows') || platform.includes('linux') || userAgent.includes('linux')
     ? WINDOWS_DEFAULT_PUSH_TO_TALK_SHORTCUT
     : MACOS_DEFAULT_PUSH_TO_TALK_SHORTCUT;
 }

@@ -28,8 +28,33 @@ macro_rules! generate_echo_handlers {
     };
 }
 
+/// Wayland lets neither a window place itself nor stay above other apps, which the overlay
+/// needs. Under XWayland GTK can do both, so Echo's own windows use X11 there unless the
+/// user chose a GDK backend. Input and paste still follow the real session (platform/linux).
+#[cfg(target_os = "linux")]
+fn prefer_xwayland() {
+    let has = |name: &str| std::env::var_os(name).is_some_and(|value| !value.is_empty());
+    if has("WAYLAND_DISPLAY") && has("DISPLAY") && !has("GDK_BACKEND") {
+        // Called first in run(), before GTK or any other thread starts.
+        std::env::set_var("GDK_BACKEND", "x11");
+    }
+}
+
+/// WebKitGTK's DMA-BUF renderer cannot allocate buffers on the proprietary NVIDIA driver and
+/// leaves every window blank.
+#[cfg(target_os = "linux")]
+fn disable_webkit_dmabuf_renderer() {
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    prefer_xwayland();
+    #[cfg(target_os = "linux")]
+    disable_webkit_dmabuf_renderer();
     panic_log::install();
     let context = tauri::generate_context!();
     let log_directory = bounded_log::platform_log_directory(&context.config().identifier)

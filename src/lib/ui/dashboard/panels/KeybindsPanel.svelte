@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getDashboardContext } from '../context.js';
   import { createKeybindsController, type KeybindsState } from './keybinds-controller';
+  import { desktopPlatform, shortcutLabel } from './permissions-controller';
   import DashboardCard from '../layout/DashboardCard.svelte';
 
   const ctx = getDashboardContext();
@@ -8,8 +9,9 @@
   let shortcutCard = $state<HTMLElement | null>(null);
   const degraded = $derived(ctx.settings().pushToTalkShortcut === 'Control+Windows' &&
     ctx.snapshot().nativeModifierAvailable === false);
-  const fallbackShortcut = $derived(ctx.settings().fallbackShortcut?.replace(/CommandOrControl|Control/g, 'Ctrl').replace(/Super/g, 'Windows'));
-  let currentShortcut = $derived(ctx.settings().pushToTalkShortcut || 'None');
+  const isLinux = $derived(desktopPlatform(ctx.permissions()) === 'linux');
+  const fallbackShortcut = $derived(ctx.settings().fallbackShortcut?.replace(/CommandOrControl|Control/g, 'Ctrl').replace(/Super/g, isLinux ? 'Super' : 'Windows'));
+  let currentShortcut = $derived(shortcutLabel(ctx.settings().pushToTalkShortcut, desktopPlatform(ctx.permissions())));
   const { startHotkeyCapture, cancelHotkeyCapture, cancelHotkeyCaptureOutside, captureHotkey,
     savePasteAfterTranscription, saveRestoreClipboard } = createKeybindsController(ctx, viewState, {
     contains: (target) => target instanceof Node && !!shortcutCard?.contains(target),
@@ -32,7 +34,7 @@
     </div>
     <div class="shortcut-help">
       {#if degraded}
-        <p role="status">Native shortcut unavailable. {#if ctx.settings().fallbackShortcut}Fallback: {fallbackShortcut}. Press once to record, then press again to transcribe.{:else}Choose another shortcut to record.{/if}</p>
+        <p role="status">Native shortcut unavailable. {#if isLinux}On Wayland, add your user to the input group and sign in again. {/if}{#if ctx.settings().fallbackShortcut}Fallback: {fallbackShortcut}. Press once to record, then press again to transcribe.{:else}Choose another shortcut to record.{/if}</p>
       {:else}
         <p>Hold this key to record and release to transcribe. Tap once to record hands-free, then tap again to transcribe.</p>
       {/if}

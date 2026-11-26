@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { Window } from 'happy-dom';
 import { compile } from 'svelte/compiler';
 import { compileRenderer } from './helpers/render-svelte';
-import { desktopPlatform, createPermissionsController } from '../src/lib/ui/dashboard/panels/permissions-controller';
+import { desktopPlatform, createPermissionsController, credentialStoreName, shortcutLabel } from '../src/lib/ui/dashboard/panels/permissions-controller';
 
 let render: Awaited<ReturnType<typeof compileRenderer>>;
 beforeAll(async () => {
@@ -130,4 +130,34 @@ test('native platform takes precedence over conflicting browser hints', () => {
     if (original) Object.defineProperty(globalThis, 'navigator', original);
     else Reflect.deleteProperty(globalThis, 'navigator');
   }
+});
+
+// Keep: Linux has no permission rows, names its keyring and labels the chord with Super.
+test('linux renders without permission rows, with keyring copy and a Super shortcut label', () => {
+  const linux = {
+    platform: 'linux' as const, microphone: item('not_required'),
+    accessibility: item('not_required'), input_monitoring: item('not_required')
+  };
+  const settings = { pushToTalkShortcut: 'Control+Windows', fallbackShortcut: 'CommandOrControl+Shift+Space' };
+  const setup = render({ initialState: { tab: 'setup', permissions: linux, permissionCheckState: 'ready', settings } });
+  expect(setup).toContain('On Wayland, Control+Super needs your user in the input group.');
+  expect(setup).toContain('No permissions are required on this platform.');
+  expect(setup).not.toContain('grant permissions later');
+  expect(setup).not.toMatch(/\d\/\d granted/);
+  expect(setup).toContain('Control+Super');
+  expect(setup).not.toContain('Control+Windows');
+  const provider = render({ initialState: { tab: 'setup', permissions: linux, permissionCheckState: 'ready',
+    settings, setup: { step: 2 } } });
+  expect(provider).toContain('your system keyring (GNOME Keyring or KWallet) on this device');
+  expect(provider).toContain('key from system keyring?');
+  expect(provider).not.toMatch(/Keychain|Credential Manager/);
+});
+
+test('platform helpers name Linux stores and shortcuts', () => {
+  expect(credentialStoreName('linux')).toBe('system keyring');
+  expect(credentialStoreName('windows')).toBe('Credential Manager');
+  expect(credentialStoreName('macos')).toBe('Keychain');
+  expect(shortcutLabel('Control+Windows', 'linux')).toBe('Control+Super');
+  expect(shortcutLabel('Control+Windows', 'windows')).toBe('Control+Windows');
+  expect(shortcutLabel(undefined, 'linux')).toBe('None');
 });

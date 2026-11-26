@@ -83,6 +83,36 @@ The [build script](../scripts/build-windows.ps1) verifies toolchains, installs f
 
 Outputs are under `src-tauri/target/x86_64-pc-windows-msvc/release/bundle`. A Mac-side typecheck of Windows modules does not prove a Windows application build or runtime behavior.
 
+## Linux source build
+
+Run on x86_64 Linux with the pinned Bun and Rust toolchains. On Debian or Ubuntu, install the WebKitGTK, tray, audio and D-Bus development packages:
+
+```sh
+sudo apt-get install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev libdbus-1-dev libssl-dev pkg-config
+```
+
+Other distributions need the same libraries under their own package names, as listed in the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/#linux). Run the shared dependency setup, then launch development:
+
+```sh
+bun run tauri:dev
+```
+
+Build a package from the repository root:
+
+```sh
+bun run tauri build --bundles deb
+```
+
+Pass `--bundles rpm` or `--bundles appimage` for the other formats. Outputs are under `src-tauri/target/release/bundle`.
+
+The [platform layer](../src-tauri/src/platform/linux.rs) picks its input path from the session. On X11 it uses XInput2 for Control+Super and XTest for paste. On Wayland it reads `/dev/input` for the chord and runs `wtype` or `ydotool` for paste. The X11 path has an integration test that drives a real X server; it needs `xvfb`, `xdotool` and `xclip`:
+
+```sh
+cd src-tauri && xvfb-run -a cargo test linux_x11 -- --ignored --test-threads=1
+```
+
+Xvfb has only a synthetic keyboard, so that test proves the X11 protocol path, not a physical keyboard, the Wayland path or behavior in each desktop environment. Check those by hand as in [Physical acceptance](#physical-acceptance).
+
 ## Publish a release
 
 A release puts signed builds for both platforms, their checksums and the `latest.json` manifest on a draft GitHub release, then publishes it. Installed copies of Echo read `latest.json` to offer the update. [Architecture](architecture.md#updates) describes the update client. Installed copies never downgrade, so a bad release is corrected only by a higher fixed version or a manual reinstall.
@@ -189,7 +219,7 @@ Extract every `(selector, property)` pair from `build/**/*.css` in both builds a
 
 ## CI
 
-The checked-in [CI workflow](../.github/workflows/ci.yml) runs on manual dispatch only; nothing runs on pushes or pull requests. Start it from the Actions tab and run the [required checks](#required-checks) locally before submitting a change. Its frontend job installs, checks, tests, builds and audits dependencies. Separate macOS and Windows jobs run native formatting, Clippy and tests, in parallel with the frontend job. A separate Windows job runs `bun run tauri build --ci --no-bundle`, and a cargo-deny job checks Rust advisories, licenses, duplicate versions and sources against `src-tauri/deny.toml`.
+The checked-in [CI workflow](../.github/workflows/ci.yml) runs on manual dispatch only; nothing runs on pushes or pull requests. Start it from the Actions tab and run the [required checks](#required-checks) locally before submitting a change. Its frontend job installs, checks, tests, builds and audits dependencies. Separate macOS, Windows and Linux jobs run native formatting, Clippy and tests, in parallel with the frontend job. The Linux job also runs the X11 integration test under Xvfb. A separate Windows job runs `bun run tauri build --ci --no-bundle`, and a cargo-deny job checks Rust advisories, licenses, duplicate versions and sources against `src-tauri/deny.toml`.
 
 CI uploads no package artifact and publishes no release. Its Windows build check does not create an installer. Passing CI proves neither signing and notarization nor physical microphone, shortcut or paste behavior. Branch protection determines required checks.
 
@@ -230,6 +260,18 @@ Review History, Copy, cancelled and confirmed deletion, clearing and retention. 
 Enable Debug log in Settings before reproducing capture failures. Use the [canonical locations and deletion guidance](../README.md#privacy-and-local-data). Logs must contain lifecycle evidence without audio, transcripts, prompts, keys, clipboard contents or device names and IDs. Enabling diagnostics during an existing capture starts full observation on the next recording.
 
 Measure release-to-paste time on a release build for speech across pauses and sentence continuations. The target of about two seconds for a sixty-second dictation is an acceptance target, not an automated-test guarantee. Record provider, platform, build provenance, observed results and skipped checks. Real microphone acquisition, the macOS Fn event tap, Windows hooks, permission prompts, real provider accounts and OS insertion require host evidence.
+
+### Linux
+
+Run these on an installed `.deb`, `.rpm` or AppImage, on an X11 session and on a Wayland session. Record the distribution, desktop and session type with each run.
+
+1. X11: hold Control+Super in a text editor, dictate and confirm the paste lands. Repeat in a terminal and confirm it pastes with Control+Shift+V.
+2. Wayland with the user in the `input` group and `ydotool` 1.0 or newer running: hold Control+Super, dictate and confirm the paste lands in a text editor. In a terminal the transcript stays on the clipboard for a manual Control+Shift+V.
+3. Wayland without the `input` group: Keybinds shows "Native shortcut unavailable" with the input group hint, and the fallback shortcut records while an Echo window is focused.
+4. Clipboard: after a paste with **Restore clipboard after paste** on, Control+V gives back what was copied before.
+5. Background mode, with a tray that supports app indicators (on GNOME, the AppIndicator extension): the icon appears, Open Echo shows the dashboard and Quit Echo ends the process.
+6. Start Echo at login writes `~/.config/autostart/Echo.desktop`. Sign out and in and confirm Echo starts hidden with background mode on. Turning the switch off removes the file.
+7. The app menu lists Echo under Utility, the dock or taskbar shows Echo's icon, and `/usr/bin/echo` still belongs to coreutils after a `.deb` install.
 
 ### Background mode
 

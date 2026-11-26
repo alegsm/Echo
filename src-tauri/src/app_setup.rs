@@ -266,9 +266,9 @@ fn start_modifier_monitor(app: &tauri::App) {
         }
         Err(error) => {
             log::warn!("Native modifier monitor unavailable: {error}");
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
             publish_modifier_availability(app.handle(), false);
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
             let _ = app.emit(
                 "echo-fn-hotkey",
                 FnHotkeyEvent {

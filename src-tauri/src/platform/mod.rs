@@ -1,7 +1,9 @@
 //! Platform-owned permissions, paste insertion, and native modifier monitoring.
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 mod fallback;
+#[cfg(target_os = "linux")]
+mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "windows")]
@@ -15,8 +17,10 @@ mod windows_microphone;
 #[cfg(any(target_os = "windows", test))]
 mod windows_shell;
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 use fallback as selected_platform;
+#[cfg(target_os = "linux")]
+use linux as selected_platform;
 #[cfg(target_os = "macos")]
 use macos as selected_platform;
 #[cfg(target_os = "windows")]
@@ -130,9 +134,9 @@ pub fn set_fn_hotkey_capture_enabled(enabled: bool) {
 }
 
 pub fn native_modifier_available() -> bool {
-    #[cfg(target_os = "windows")]
-    return windows::native_modifier_available();
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    return selected_platform::native_modifier_available();
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     true
 }
 
@@ -141,9 +145,9 @@ where
     F: Fn(bool) + Send + Sync + 'static,
     H: Fn(bool) + Send + Sync + 'static,
 {
-    #[cfg(target_os = "windows")]
-    return windows::start_modifier_monitor(handler, health);
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    return selected_platform::start_modifier_monitor(handler, health);
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         let _ = health;
         selected_platform::start_modifier_monitor(handler)
@@ -210,7 +214,7 @@ pub(crate) fn clipboard_is_owned(
 }
 
 // Both adapters prepare their representations before entering this publication boundary.
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux", test))]
 pub(super) fn publish_clipboard<C>(
     clipboard: C,
     previous: Option<&str>,

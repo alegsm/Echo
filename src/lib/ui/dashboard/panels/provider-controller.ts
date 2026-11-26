@@ -1,7 +1,7 @@
 import { providerOptions, type ProviderId } from '#lib/core/settings.ts';
 import type { EchoRuntime, EchoSnapshot, ProviderKeySearchOutcome } from '#lib/core/types.ts';
 import type { DashboardContext } from '../context';
-import { desktopPlatform } from './permissions-controller';
+import { credentialStoreName, desktopPlatform } from './permissions-controller';
 
 export type ProviderOperation = { busy: boolean; checking: ProviderId | null; finding?: ProviderId | null };
 export type ProviderState = {
@@ -103,7 +103,7 @@ export function createProviderController(ctx: ProviderContext, state: ProviderSt
   }
 
   function credentialStore() {
-    return desktopPlatform(ctx.permissions?.()) === 'windows' ? 'Credential Manager' : 'Keychain';
+    return credentialStoreName(desktopPlatform(ctx.permissions?.()));
   }
 
   function searchResult(outcome: ProviderKeySearchOutcome | 'failed', label: string): [string, ResultTone?] {
@@ -114,7 +114,9 @@ export function createProviderController(ctx: ProviderContext, state: ProviderSt
       case 'invalid': return [`The saved ${label} key in ${store} can't be used. Paste your key and select Check key.`, 'error'];
       case 'unavailable': return [store === 'Credential Manager'
         ? 'Credential Manager could not be read. Try again.'
-        : 'Keychain access was denied or unavailable. Select Find saved key again and choose Allow.', 'error'];
+        : store === 'system keyring'
+          ? 'The system keyring could not be read. Make sure GNOME Keyring or KWallet is running and unlocked, then try again.'
+          : 'Keychain access was denied or unavailable. Select Find saved key again and choose Allow.', 'error'];
       case 'already_saved': return [''];
       case 'save_failed': return ['Key found, but Echo could not save that. Try again.', 'error'];
       default: return ['Saved key search failed. Try again.', 'error'];

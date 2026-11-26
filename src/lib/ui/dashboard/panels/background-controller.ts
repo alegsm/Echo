@@ -71,7 +71,7 @@ export function createBackgroundController(ctx: BackgroundContext, initial: Back
     if (state.registered === null) return null;
     const saved = ctx.settings().launchAtLogin;
     if (saved === state.registered) return null;
-    const os = desktopPlatform(ctx.permissions()) === 'windows' ? 'Windows' : 'macOS';
+    const os = ({ windows: 'Windows', linux: 'Linux' } as Record<string, string>)[desktopPlatform(ctx.permissions())] ?? 'macOS';
     return saved
       ? `Not registered with ${os}. Turn the switch off and on again.`
       : `${os} still starts Echo at login. Turn the switch on and off again.`;

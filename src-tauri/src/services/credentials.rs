@@ -925,6 +925,17 @@ pub(crate) mod tests {
         assert!(store.calls().is_empty());
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_build_uses_the_secret_service_backend() {
+        let store = CountingStore::default();
+        let _service = CredentialService::new(store.clone());
+        assert!(keyring::default::default_credential_builder()
+            .as_any()
+            .is::<keyring::secret_service::SsCredentialBuilder>());
+        assert!(store.calls().is_empty());
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn windows_build_uses_the_native_credential_backend() {

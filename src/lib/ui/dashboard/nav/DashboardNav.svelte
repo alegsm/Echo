@@ -7,7 +7,7 @@
   import EchoMark, { MARK_SHINE_PERIOD_MS } from '#lib/ui/brand/EchoMark.svelte';
   import { providerOptions } from '#lib/core/settings.ts';
   import { getDashboardContext, type SettingsTab } from '../context.js';
-  import { applicablePermissionKinds } from '../panels/permissions-controller';
+  import { applicablePermissionKinds, desktopPlatform, shortcutLabel } from '../panels/permissions-controller';
   import { createUpdateController, updateAnnouncement, updateBusy, updateDescription, updateLabel, type UpdateView } from './update-controller';
 
   let { activeTab, onselect, motionAllowed = true }: { motionAllowed?: boolean; activeTab: SettingsTab; onselect(tab: SettingsTab): void } = $props();
@@ -23,6 +23,7 @@
   const labels = ['History', 'Phrasebook', 'Settings'];
   let page = $derived(activeTab === 'setup' ? undefined : activeTab === 'history' || activeTab === 'phrasebook' ? activeTab : 'settings');
   let provider = $derived(providerOptions.find((item) => item.id === ctx.settings().providerId));
+  let shortcut = $derived(shortcutLabel(ctx.settings().pushToTalkShortcut, desktopPlatform(ctx.permissions())));
   let missing = $derived(ctx.permissions() ? applicablePermissionKinds(ctx.permissions()).some((kind) => !ctx.permissions()![kind]?.granted) : undefined);
   let permissionStatus = $derived(ctx.permissionCheckState() === 'unknown' ? 'Permissions unknown'
     : missing === undefined ? 'Checking permissions'
@@ -49,8 +50,8 @@
       </button>
     {/each}
   </nav>
-  <button class="dashboard-status" type="button" onclick={() => onselect('permissions')} title={`${ctx.settings().pushToTalkShortcut || 'None'} · ${provider?.label} · ${permissionStatus}`} aria-label={`Shortcut ${ctx.settings().pushToTalkShortcut || 'None'}, ${provider?.label}. ${permissionStatus}`}>
-    <span class="status-copy"><kbd>{ctx.settings().pushToTalkShortcut || 'None'}</kbd></span>
+  <button class="dashboard-status" type="button" onclick={() => onselect('permissions')} title={`${shortcut} · ${provider?.label} · ${permissionStatus}`} aria-label={`Shortcut ${shortcut}, ${provider?.label}. ${permissionStatus}`}>
+    <span class="status-copy"><kbd>{shortcut}</kbd></span>
     <span aria-hidden="true" class="status-dot" class:needs-attention={ctx.permissionCheckState() === 'unknown' || missing !== false}></span><span class="status-copy provider-label">{provider?.label}</span>
   </button>
   <div class="dashboard-version" class:has-update={updateView.kind !== 'hidden'}>

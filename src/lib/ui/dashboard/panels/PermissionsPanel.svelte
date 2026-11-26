@@ -32,7 +32,7 @@
   <DashboardCard padding="var(--card-pad)">
     <div class="card-head">
       <h2 id="settings-permissions" tabindex="-1">Permissions</h2>
-      <span role="status">{#if complete}{granted}/{rows.length} granted{/if}</span>
+      <span role="status">{#if complete && rows.length}{granted}/{rows.length} granted{/if}</span>
       <button type="button" class="recheck" aria-disabled={viewState.permissionRefreshState === 'checking' || !!viewState.permissionAction} onclick={doRefresh}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1" /></svg>{viewState.permissionRefreshState === 'checking' ? 'Checking…' : 'Re-check'}</button>
     </div>
     <ul aria-label="Desktop permissions">
@@ -50,6 +50,7 @@
         </li>
       {/each}
     </ul>
+    {#if resultsReady && rows.length === 0}<p class="none-required">No permissions are required on this platform.</p>{/if}
     {#if platform === 'macos'}<FnKeyPreferenceControl bind:this={fnControl} />{/if}
   </DashboardCard>
 </section>
@@ -58,6 +59,7 @@
   section { grid-column: 1 / -1; min-width: 0; }
   .card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
   h2 { margin: 0; font: var(--t-caps); letter-spacing: 0.08em; text-transform: uppercase; color: var(--echo-fg-3); }
+  .none-required { margin: 6px 0 4px; font: var(--t-body); color: var(--echo-fg-2); }
   .card-head > span { margin-left: auto; font: var(--t-meta); color: var(--echo-fg-3); }
   ul { list-style: none; margin: 0; padding: 0; }
   li { display: flex; align-items: center; gap: 14px; padding: 14px 0; }

@@ -230,8 +230,9 @@ fn permission_error(permission: &str, is_windows: bool) -> CaptureError {
     CaptureError::new(code, stage).at_phase(CapturePhase::PermissionPending)
 }
 
+/// `not_required` is Linux, which has no per-app microphone consent outside sandboxes.
 fn permission_allows_native_capture(permission: &str) -> bool {
-    permission == "authorized"
+    matches!(permission, "authorized" | "not_required")
 }
 
 fn unavailable(stage: &'static str) -> CaptureError {
@@ -319,6 +320,8 @@ mod tests {
     #[test]
     fn microphone_capture_requires_confirmed_permission() {
         assert!(permission_allows_native_capture("authorized"));
+        // Linux has no microphone consent model, so nothing is left to confirm.
+        assert!(permission_allows_native_capture("not_required"));
         assert!(!permission_allows_native_capture("unsupported"));
         assert!(!permission_allows_native_capture("unknown"));
         assert!(!permission_allows_native_capture("denied"));

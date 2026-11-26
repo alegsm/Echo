@@ -64,7 +64,7 @@ export function createKeybindsController(ctx: KeybindsContext, state: KeybindsSt
     if (!key) return undefined;
 
     const modifiers: string[] = [];
-    if (event.metaKey) modifiers.push(platform.toLowerCase().includes('win') ? 'Super' : 'CommandOrControl');
+    if (event.metaKey) modifiers.push(/win|linux/i.test(platform) ? 'Super' : 'CommandOrControl');
     if (event.ctrlKey) modifiers.push('Control');
     if (event.altKey) modifiers.push('Alt');
     if (event.shiftKey) modifiers.push('Shift');

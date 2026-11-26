@@ -23,13 +23,14 @@ body:
       options:
         - macOS
         - Windows
+        - Linux
     validations:
       required: true
   - type: input
     id: os-version
     attributes:
       label: OS version
-      placeholder: "macOS 26.1, Windows 11 24H2"
+      placeholder: "macOS 26.1, Windows 11 24H2, Ubuntu 24.04 on Wayland"
   - type: dropdown
     id: provider
     attributes:

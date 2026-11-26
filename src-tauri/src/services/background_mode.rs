@@ -198,9 +198,15 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
 fn tray_image(_app: &AppHandle) -> Image<'static> {
     tauri::include_image!("icons/tray/macos-template.png")
+}
+
+/// Linux panels draw app indicators in full color at roughly 22-24 px.
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn tray_image(_app: &AppHandle) -> Image<'static> {
+    tauri::include_image!("icons/tray/windows-32.png")
 }
 
 /// Picks the frame once, from the dashboard's scale when the icon is built; a later

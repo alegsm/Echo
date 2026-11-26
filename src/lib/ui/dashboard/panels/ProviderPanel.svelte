@@ -4,13 +4,13 @@
   import { providerOptions } from '#lib/core/settings.ts';
   import { getDashboardContext } from '../context.js';
   import { createProviderController, type ProviderState } from './provider-controller';
-  import { desktopPlatform } from './permissions-controller';
+  import { credentialStoreDescription, credentialStoreName, desktopPlatform } from './permissions-controller';
   import DashboardCard from '../layout/DashboardCard.svelte';
   import ProviderCheckLight from './ProviderCheckLight.svelte';
 
   const ctx = getDashboardContext();
   let platform = $derived(desktopPlatform(ctx.permissions()));
-  let credentialStore = $derived(platform === 'windows' ? 'Credential Manager' : 'Keychain');
+  let credentialStore = $derived(credentialStoreName(platform));
   let provider = $derived(providerOptions.find((p) => p.id === ctx.settings().providerId)!);
   const viewState = $state<ProviderState>({
     operation: { busy: false, checking: null, finding: null }, messages: {}, resultTones: {}, removalProvider: null
@@ -74,7 +74,7 @@
 
 <dialog bind:this={saveDialog} aria-labelledby="save-key-heading" onkeydown={trapDialogFocus} oncancel={(event) => { event.preventDefault(); void cancelSave(); }} onclose={() => void cancelSave()}>
   <h3 id="save-key-heading">Save {provider.label} key</h3>
-  <p>Echo will save your key in {credentialStore === 'Keychain' ? 'macOS Keychain' : 'Windows Credential Manager'} on this device. Echo reads it only to call {provider.label}.</p>
+  <p>Echo will save your key in {credentialStoreDescription(platform)} on this device. Echo reads it only to call {provider.label}.</p>
   {#if credentialStore === 'Keychain'}<p>macOS may ask you to allow Echo access.</p>{/if}
   <div class="dialog-actions">
     <button type="button" onclick={() => void cancelSave()}>Cancel</button>

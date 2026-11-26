@@ -250,3 +250,17 @@ fn windows_registry_adapter_refuses_other_hives() {
         assert!(user_run_entry::user_subkey(key).is_err(), "{key}");
     }
 }
+
+// Keep: an AppImage registers its own file, not the temporary mount it runs from.
+#[test]
+fn login_record_points_at_the_appimage_file_on_linux() {
+    let mounted = PathBuf::from("/tmp/.mount_EchoXYZ/usr/bin/echo");
+    let registered = login_exe(mounted.clone(), Some("/home/me/Apps/Echo.AppImage".into()));
+    if cfg!(target_os = "linux") {
+        assert_eq!(registered, PathBuf::from("/home/me/Apps/Echo.AppImage"));
+    } else {
+        assert_eq!(registered, mounted);
+    }
+    assert_eq!(login_exe(mounted.clone(), None), mounted);
+    assert_eq!(login_exe(mounted.clone(), Some("".into())), mounted);
+}

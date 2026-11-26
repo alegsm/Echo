@@ -255,6 +255,10 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) {
     if cfg!(debug_assertions) {
         return;
     }
+    // No Linux release is published, so a check would offer a page with nothing to download.
+    if cfg!(target_os = "linux") {
+        return;
+    }
     let service = app.state::<UpdaterService>().inner().clone();
     #[cfg(echo_update_install)]
     let source = install::PluginSource::new(app.clone());

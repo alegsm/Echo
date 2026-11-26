@@ -1,6 +1,6 @@
 # Architecture
 
-Echo uses a Rust host and Svelte webviews on macOS and Windows. This reference describes the implementation. [README](../README.md) owns product use, the provider catalog, privacy and local-data instructions. [Development](development.md) owns build commands and acceptance procedures.
+Echo uses a Rust host and Svelte webviews on macOS and Windows, and builds from source on Linux. This reference describes the implementation. [README](../README.md) owns product use, the provider catalog, privacy and local-data instructions. [Development](development.md) owns build commands and acceptance procedures.
 
 ## Host and renderers
 
@@ -10,7 +10,7 @@ Echo uses a Rust host and Svelte webviews on macOS and Windows. This reference d
 
 Kit 3 checks `/_app/version.json` when a window gains focus or becomes visible. In the packaged static app this reads a bundled local file through Tauri's asset protocol; it contacts no remote host. The installed Kit version exposes `version.name` and `version.pollInterval`, with no supported option to disable these event checks. Setting `pollInterval: 0` disables only the scheduled checks.
 
-[runtime.ts](../src/lib/runtime/runtime.ts) requires Tauri before creating the desktop runtime. WKWebView on macOS and WebView2 on Windows render the UI. Rust owns capture, credentials, provider calls, settings, history and native delivery. Webview process allocation belongs to the platform; the architecture does not depend on a fixed OS-process count.
+[runtime.ts](../src/lib/runtime/runtime.ts) requires Tauri before creating the desktop runtime. WKWebView on macOS, WebView2 on Windows and WebKitGTK on Linux render the UI. Rust owns capture, credentials, provider calls, settings, history and native delivery. Webview process allocation belongs to the platform; the architecture does not depend on a fixed OS-process count.
 
 | Path | Responsibility |
 | --- | --- |
@@ -123,7 +123,21 @@ macOS publishes `org.nspasteboard.TransientType` and `org.nspasteboard.Concealed
 
 Windows publishes `ExcludeClipboardContentFromMonitorProcessing`, plus zero values for `CanIncludeInClipboardHistory` and `CanUploadToCloudClipboard`, before Unicode text. It compares `GetClipboardSequenceNumber` and restores under a clipboard lock. Native code releases and restores all eight modifier sides around Ctrl+V and tags injected events. Partial insertion fails without replaying paste; modifier recovery is bounded and best effort.
 
+Linux keeps one long-lived arboard clipboard handle in [clipboard.rs](../src-tauri/src/platform/linux/clipboard.rs), because X11 and Wayland serve the clipboard from the owning process and dropping the handle would clear an unpasted transcript. It publishes `x-kde-passwordManagerHint` before text. Neither protocol has a change counter, so the generation is Echo's own publication count and ownership falls back to comparing text: another app's identical copy counts as Echo's. Paste is described in [Linux platform](#linux-platform).
+
 Preservation is text-only; images and files are not restored. Third-party clipboard managers may ignore exclusion requests. A one-shot native ownership proof lets saved results update their SQLite delivery outcome; delayed reports cannot overwrite newer revisions. Unsaved transcripts still deliver without that report. Clipboard content and native error detail do not return to renderer snapshots.
+
+## Linux platform
+
+[platform/linux.rs](../src-tauri/src/platform/linux.rs) decides the session from `XDG_SESSION_TYPE`, then from `WAYLAND_DISPLAY`. The session picks the input path. It does not depend on the GDK backend of Echo's own windows.
+
+Before anything else, `run` in [lib.rs](../src-tauri/src/lib.rs) sets two environment variables, while no other thread exists yet. `prefer_xwayland` sets `GDK_BACKEND=x11` when both `WAYLAND_DISPLAY` and `DISPLAY` exist and the user has not chosen a backend. Wayland lets a window neither place itself nor stay above other apps, and the overlay needs both. `disable_webkit_dmabuf_renderer` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` unless the user set it, because WebKitGTK's DMA-BUF renderer cannot allocate GBM buffers on the proprietary NVIDIA driver and every window stays blank.
+
+[hotkey.rs](../src-tauri/src/platform/linux/hotkey.rs) runs one supervisor thread that reports the Control+Super chord, either Control with either Super, through the shared `ModifierState`. On an X11 session, [x11.rs](../src-tauri/src/platform/linux/x11.rs) selects XInput2 raw key events on the root window and drops events from XTEST devices, so Echo's own paste cannot start a recording. On Wayland, or when X11 fails, [evdev.rs](../src-tauri/src/platform/linux/evdev.rs) opens every `/dev/input/event*` that reports Control and Super, read-only and non-blocking. It never grabs a device. It skips `ydotoold virtual device`, the uinput device Echo's own Wayland paste types through, so a paste cannot complete the chord with a physically held Super. It merges key state across keyboards and rescans every 3 seconds for new ones. After `SYN_DROPPED`, it ignores events until the next `SYN_REPORT`, then rereads the chord keys with `EVIOCGKEY`; a failed reread releases them. Reading the devices needs the `input` group. When neither backend starts, the supervisor reports the monitor unavailable and the configured fallback shortcut takes over. A pipe wakes the thread on shutdown.
+
+[paste.rs](../src-tauri/src/platform/linux/paste.rs) pastes by session. On X11, `x11::paste` releases held modifiers through XTEST, sends Control+V, or Control+Shift+V when a part of the focused window's `WM_CLASS` contains `terminal`, equals a known terminal's name or ends with `.` and that name, and presses the modifiers again. On Wayland, where clients cannot inject input, Echo runs `wtype` (virtual-keyboard protocol: wlroots compositors and KDE), then `ydotool` (uinput, any compositor, needs its daemon). Each helper resolves from absolute `PATH` entries only. The Wayland path cannot see the focused window, so it always sends Control+V. With neither helper installed, delivery reports `insertion_failed` and the transcript stays on the clipboard.
+
+Microphone, accessibility and input monitoring report `not_required`, which capture accepts like `authorized`, and the permissions panel lists no rows. keyring uses the Secret Service backend, so provider keys live in GNOME Keyring, KWallet or KeePassXC. [tauri.linux.conf.json](../src-tauri/tauri.linux.conf.json) names the binary `echostt`, because the default `echo` would install over coreutils' `/usr/bin/echo`. Its desktop entry uses `echostt` for `Exec`, `Icon` and `StartupWMClass`, so GNOME can match Echo's windows to the icon.
 
 ## Storage
 
@@ -217,13 +231,15 @@ Registration runs inside the settings transaction. `update_persisted_settings` i
 - Running Echo from an App Translocation path, such as straight from Downloads or a disk image, registers a temporary path until the next normal start.
 - An unsigned or ad-hoc build shows a weak name in Login Items.
 
-Status rows or recording controls in the tray menu, per-machine login registration and Linux are out of scope.
+On Linux the tray is an app indicator drawn from the color 32 px Windows frame, and the login item is the XDG autostart file `~/.config/autostart/Echo.desktop`. When Echo runs from an AppImage, the record points at the file named by `APPIMAGE` rather than the temporary mount the executable runs from.
+
+Status rows or recording controls in the tray menu and per-machine login registration are out of scope.
 
 ## Updates
 
 [updater.rs](../src-tauri/src/services/updater.rs) owns every update request; the renderer invokes two commands and listens to one event. `UpdaterService` is managed state holding the status sequence, the status, the pending release and a busy flag. [app_setup.rs](../src-tauri/src/app_setup.rs) manages it and starts it only in release builds (`!cfg!(debug_assertions)`), so `bun run tauri:dev` never contacts an endpoint and its status stays `none`.
 
-**Platforms.** One switch decides what an update request does: `installs_updates` in [build.rs](../src-tauri/build.rs) sets the `echo_update_install` cfg for macOS only. Builds with it (install builds) register the updater plugin and compile [install.rs](../src-tauri/src/services/updater/install.rs), which holds every download, idle-gate and install item. Builds without it (notify builds, currently Windows, whose builds are not code-signed) do not register the plugin and reference none of its types; they check with `ManifestSource`, read only the manifest's `version`, verify no signature because nothing is downloaded, and open the fixed `DOWNLOAD_PAGE_URL`, `https://github.com/alegsm/Echo/releases/latest`. The plugin stays a dependency on all targets, so the generated ACL schemas stay identical across platforms. Adding `windows` to the switch re-enables the full updater for signed Windows builds.
+**Platforms.** One switch decides what an update request does: `installs_updates` in [build.rs](../src-tauri/build.rs) sets the `echo_update_install` cfg for macOS only. Builds with it (install builds) register the updater plugin and compile [install.rs](../src-tauri/src/services/updater/install.rs), which holds every download, idle-gate and install item. Builds without it (notify builds, currently Windows, whose builds are not code-signed) do not register the plugin and reference none of its types; they check with `ManifestSource`, read only the manifest's `version`, verify no signature because nothing is downloaded, and open the fixed `DOWNLOAD_PAGE_URL`, `https://github.com/alegsm/Echo/releases/latest`. The plugin stays a dependency on all targets, so the generated ACL schemas stay identical across platforms. Adding `windows` to the switch re-enables the full updater for signed Windows builds. Linux builds are notify builds that return from `start` before the schedule runs: no Linux release is published, so a check could only offer a page with nothing to download, and `platform::open_url` has no Linux opener. Their status stays `none`.
 
 **Schedule.** Echo checks at launch, then a thread wakes every 5 minutes and checks again once wall-clock time (`SystemTime`) is 24 hours past the last check. Monotonic sleep pauses while the system sleeps, so the short tick lets a check that fell due during sleep run within 5 minutes of waking. A clock moved back before the last check also makes a check due.
 
